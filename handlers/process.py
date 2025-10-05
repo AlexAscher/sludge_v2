@@ -228,11 +228,14 @@ async def handle_link(message: Message):
     url = message.text.strip()
     await message.answer(f"🔗 Link received: {url}\n⏳ Downloading...")
 
+
+    # ...удалён функционал TikTok и Instagram...
+
+    # Старое поведение для остальных ссылок
     filetype = guess_file_type(url)
     if filetype not in ('photo', 'video', 'video-hosting'):
         await message.answer("❌ Only photo and video links are supported. Please send a direct photo or video file, or a link to one.")
         return
-
     try:
         if filetype in ('video', 'video-hosting'):
             filepath = await download_video(url)
@@ -241,21 +244,17 @@ async def handle_link(message: Message):
         elif filetype == 'photo':
             filepath = await download_file(url)
         else:
-            # Попробуем скачать как есть, но проверим content-type
             filepath = await download_file(url)
-            # Check: if we downloaded html, not a file
             with open(filepath, 'rb') as f:
                 head = f.read(512)
                 if b'<html' in head.lower():
                     raise Exception("The link does not point to a file, but to a web page.")
         if not filepath:
             raise Exception("File was not downloaded")
-        # Сохраняем в кэш
         file_uuid = str(uuid.uuid4())
         file_cache[file_uuid] = filepath
         current_time = time.time()
         file_cache_times[file_uuid] = current_time
-        # Вместо кнопки download, отправляем сообщение с выбором количества копий
         ext = os.path.splitext(filepath)[1].lower()
         media_type = "photo" if ext in {'.jpg', '.jpeg', '.png', '.webp'} else "video" if ext in {'.mp4', '.mov', '.avi', '.webm'} else "document"
         keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
