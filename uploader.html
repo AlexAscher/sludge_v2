@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Uploader (via Server)</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f5f6fa; margin: 0; padding: 0; }
+        .container { max-width: 500px; margin: 60px auto; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 32px; }
+        h1 { text-align: center; margin-bottom: 24px; }
+        input[type=file] { width: 100%; margin-bottom: 18px; }
+        button { background: #007bff; color: #fff; border: none; border-radius: 8px; padding: 12px 24px; font-size: 1.1em; cursor: pointer; }
+        button:disabled { background: #aaa; }
+        .status { margin-top: 18px; text-align: center; font-size: 1.05em; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Upload your file</h1>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" name="file" id="fileInput" accept="image/*,video/*" required />
+        <button type="submit" id="uploadBtn">Upload</button>
+    </form>
+    <div class="status" id="status"></div>
+</div>
+<script>
+// === НАСТРОЙКИ ===
+const UPLOAD_URL = 'http://localhost:5000/upload';  // URL вашего сервера
+
+// === ЛОГИКА ===
+function isValidFileType(file) {
+    const allowedTypes = [
+        'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
+        'video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm', 'video/avi', 'video/mpeg', 'video/ogg'
+    ];
+    return allowedTypes.includes(file.type);
+}
+
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fileInput = document.getElementById('fileInput');
+    const file = fileInput.files[0];
+    const status = document.getElementById('status');
+    const btn = document.getElementById('uploadBtn');
+
+    if (!file) {
+        status.innerText = '❌ Выберите файл!';
+        return;
+    }
+
+    if (!isValidFileType(file)) {
+        status.innerText = '❌ Можно загружать только фото или видео!';
+        return;
+    }
+
+    btn.disabled = true;
+    status.innerText = 'Uploading...';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const resp = await fetch(UPLOAD_URL, {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await resp.json();
+
+        if (resp.ok) {
+            status.innerHTML = `✅ Файл загружен!<br>Скопируйте ссылку и отправьте её боту:<br><input type='text' value='${result.url}' readonly style='width:100%;margin-top:8px;' onclick='this.select()'>`;
+        } else {
+            status.innerText = `❌ Upload failed: ${result.error}`;
+        }
+    } catch (error) {
+        status.innerText = `❌ Upload failed: ${error.message}`;
+    } finally {
+        btn.disabled = false;
+    }
+});
+</script>
+</body>
+</html>
