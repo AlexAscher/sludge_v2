@@ -18,6 +18,7 @@ from config import TEMP_DIR, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET
 from collections import defaultdict
 import zipfile
 import shutil
+from db import increment_files, get_user
 
 router = Router()
 
@@ -149,9 +150,7 @@ async def handle_photo(message: Message):
             types.InlineKeyboardButton(text="120", callback_data=f"copies|120|{file_uuid}|photo"),
         ]
     ])
-    await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
-
-# Обработка видео от пользователя
+    await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)# Обработка видео от пользователя
 @router.message(F.video)
 async def handle_video(message: Message):
     cleanup_old_files()  # Очищаем старые файлы
@@ -281,7 +280,12 @@ async def handle_link(message: Message):
 # Обработчик для неподдерживаемых сообщений
 @router.message()
 async def handle_unsupported(message: Message):
-    await message.answer("❌ Please send only photos or videos (or links to them). Other types are not supported.")
+    user_data = await get_user(message.from_user.id)
+    if user_data['is_premium']:
+        await message.answer("❌ Please send only photos or videos (or links to them). Other types are not supported.")
+    else:
+        remaining = 20 - user_data['files_today']
+        await message.answer(f"❌ Please send only photos or videos (or links to them). You have {remaining} free copies left today. For unlimited access, pay 0.05 USDT: /pay")
 
 # 2️⃣ Обработка кнопки (с путём к файлу)
 @router.callback_query(F.data.startswith("download|"))
@@ -325,6 +329,8 @@ async def process_copies(callback: CallbackQuery):
             await callback.answer("File not found", show_alert=True)
             return
         await callback.message.answer(f"⏳ Creating {count} copies...")
+
+        await increment_files(callback.from_user.id, count)
 
         import random, string
         def long_random_name(length=36):

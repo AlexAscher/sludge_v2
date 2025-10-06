@@ -15,9 +15,15 @@ from dotenv import load_dotenv
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+# CryptoBot токен для оплаты
+CRYPTOBOT_TOKEN = os.getenv("CRYPTOBOT_TOKEN")
+
 # AWS S3 настройки (или compatible)
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")  # Для Backblaze: applicationKeyId | Для DigitalOcean Spaces: Access Key из Spaces Keys
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")  # Для Backblaze: applicationKey | Для DigitalOcean Spaces: Secret Key из Spaces Keys
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")  # Имя bucket в Spaces (например, my-sludge-bucket)
 S3_REGION = os.getenv("S3_REGION", "fra1")
 S3_ENDPOINT = os.getenv("S3_ENDPOINT")  # Для DigitalOcean Spaces: https://[region].digitaloceanspaces.com (например, https://fra1.digitaloceanspaces.com)
+
+# PocketBase
+PB_URL = os.getenv("PB_URL", "http://localhost:8090")  # URL PocketBase сервера
