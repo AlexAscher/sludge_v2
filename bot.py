@@ -4,7 +4,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command
 from config import BOT_TOKEN, CRYPTOBOT_TOKEN
 from handlers import start, help, process
-from db import get_user, increment_files, set_premium
+from db import get_user, increment_files, set_premium, init_db
 from aiosend import CryptoPay, TESTNET
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -23,7 +23,7 @@ async def check_payments(bot: Bot, cryptopay: CryptoPay):
             invoice = await cryptopay.get_invoice(invoice_id)
             if invoice.status == 'paid':
                 await set_premium(user_id, True)
-                await bot.send_message(user_id, "✅ Оплата прошла! Теперь у вас безлимитный доступ.")
+                await bot.send_message(user_id, "✅ Payment received! You now have unlimited access.")
                 del pending_payments[user_id]
         except Exception as e:
             logging.error(f"Error checking payment for {user_id}: {e}")
@@ -33,18 +33,21 @@ async def limit_middleware(handler, event, data):
     """Middleware для проверки лимита файлов"""
     if isinstance(event, types.Message) and event.text and not event.text.startswith('/'):
         user_id = event.from_user.id
-        user_data = await get_user(user_id)
+        name = event.from_user.first_name or "Unknown"
+        telegram_id = event.from_user.id
+        username = getattr(event.from_user, 'username', '') or ''
+        user_data = await get_user(user_id, name, telegram_id, username)
 
         if not user_data['is_premium']:
             if user_data['files_today'] >= 20:
                 await event.answer(
-                    "❌ Вы достигли лимита 20 копий в день. Оплатите подписку за 0.05 USDT для безлимитного доступа: /pay")
+                    "❌ You reached the limit of 20 copies per day. Pay 0.05 USDT for unlimited access: /pay")
                 return
             else:
                 remaining = 20 - user_data['files_today']
                 if remaining in [20, 15, 10, 5, 3, 2, 1]:
                     await event.answer(
-                        f"ℹ️ У вас осталось {remaining} копий в день. Для безлимитного доступа оплатите 0.05 USDT: /pay")
+                        f"ℹ️ You have {remaining} copies left today. For unlimited access, pay 0.05 USDT: /pay")
 
     return await handler(event, data)
 
@@ -57,17 +60,20 @@ async def pay_command(message: types.Message, cryptopay: CryptoPay):
     invoice = await cryptopay.create_invoice(
         amount=0.05,
         currency='USDT',
-        description='Подписка на безлимитный доступ к боту'
+        description='Subscription for unlimited access to the bot'
     )
 
     pending_payments[user_id] = invoice.invoice_id
 
-    # Отправляем ссылку на оплату
-    text = f"💳 Оплатите 0.05 USDT для безлимитного доступа.\n\n{invoice.pay_url}\n\nПосле оплаты статус обновится автоматически."
+    # Send payment link
+    text = f"💳 Pay 0.05 USDT for unlimited access.\n\n{invoice.pay_url}\n\nYour status will be updated automatically after payment."
     await message.answer(text)
 
 
 async def main():
+    # Инициализация базы данных и аутентификация
+    await init_db()
+
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode="HTML")

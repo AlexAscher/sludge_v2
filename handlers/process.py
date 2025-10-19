@@ -5,7 +5,7 @@
 
 from aiogram import Router, F, types
 from aiogram.types import Message, CallbackQuery
-from services.downloader import download_video
+## download_video больше не используется
 from services.video_edit import randomize_metadata
 from services.photo_edit import randomize_exif
 import mimetypes
@@ -76,7 +76,7 @@ async def show_tools_menu(callback: CallbackQuery):
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="⬅️ Go Back", callback_data="back")],
     ])
-    # Если сообщение с медиа — используем edit_caption, иначе edit_text
+    # If the message has media — use edit_caption, otherwise edit_text
     try:
         if callback.message.photo or callback.message.video:
             await callback.message.edit_caption(caption="Select a template option:", reply_markup=keyboard)
@@ -89,13 +89,9 @@ async def show_tools_menu(callback: CallbackQuery):
 # Go Back button handler (restore previous menu)
 @router.callback_query(F.data == "back")
 async def go_back_menu(callback: CallbackQuery):
-    # Определяем, к какому типу файла возвращаться (фото или видео)
-    # Пробуем получить caption и media type
     caption = callback.message.caption or callback.message.text or ""
-    # Определяем, что было отправлено: фото или видео
     is_photo = callback.message.photo is not None
     is_video = callback.message.video is not None
-    # Клавиатура как после обработки фото/видео
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="Download", callback_data="download_photo" if is_photo else "download_video")],
         [types.InlineKeyboardButton(text="Templates", callback_data="templates"), types.InlineKeyboardButton(text="Tools", callback_data="tools")],
@@ -104,14 +100,12 @@ async def go_back_menu(callback: CallbackQuery):
         [types.InlineKeyboardButton(text="Monthly Subscription", callback_data="monthly_sub")],
         [types.InlineKeyboardButton(text="Annual Subscription (3 months free)", callback_data="annual_sub")],
     ])
-    # Обновляем только reply_markup и caption, не отправляем новое сообщение
     try:
         if is_photo:
             await callback.message.edit_caption(caption="✅ Done! Here is your photo with new metadata.", reply_markup=keyboard)
         elif is_video:
             await callback.message.edit_caption(caption="✅ Done! Here is your video with new metadata.", reply_markup=keyboard)
         else:
-            # Если не фото и не видео, просто обновим reply_markup
             await callback.message.edit_reply_markup(reply_markup=keyboard)
     except Exception as e:
         await callback.answer("Failed to go back.", show_alert=True)
@@ -127,6 +121,12 @@ async def handle_photo(message: Message):
     file_path = file.file_path
     dest_path = os.path.join(TEMP_DIR, f"{photo.file_id}.jpg")
     await message.bot.download_file(file_path, dest_path)
+    # Ensure user record exists and username is stored
+    user_id = message.from_user.id
+    name = message.from_user.first_name or "Unknown"
+    username = message.from_user.username
+    await get_user(user_id, name, str(user_id), username)
+
     # Сохраняем в кэш
     file_uuid = str(uuid.uuid4())
     file_cache[file_uuid] = dest_path
@@ -150,7 +150,7 @@ async def handle_photo(message: Message):
             types.InlineKeyboardButton(text="120", callback_data=f"copies|120|{file_uuid}|photo"),
         ]
     ])
-    await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)# Обработка видео от пользователя
+    await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
 @router.message(F.video)
 async def handle_video(message: Message):
     cleanup_old_files()  # Очищаем старые файлы
@@ -161,6 +161,12 @@ async def handle_video(message: Message):
     ext = os.path.splitext(file_path)[1] or ".mp4"
     dest_path = os.path.join(TEMP_DIR, f"{video.file_id}{ext}")
     await message.bot.download_file(file_path, dest_path)
+    # Ensure user record exists and username is stored
+    user_id = message.from_user.id
+    name = message.from_user.first_name or "Unknown"
+    username = message.from_user.username
+    await get_user(user_id, name, str(user_id), username)
+
     # Сохраняем в кэш
     file_uuid = str(uuid.uuid4())
     file_cache[file_uuid] = dest_path
@@ -189,103 +195,25 @@ async def handle_video(message: Message):
 
 
 
-# Универсальное определение типа файла по ссылке
-def guess_file_type(url: str) -> str:
-    ext = os.path.splitext(url)[1].lower()
-    if ext in {'.mp4', '.mov', '.avi', '.webm'}:
-        return 'video'
-    if ext in {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}:
-        return 'photo'
-    # Проверка по домену для популярных видеохостингов
-    video_domains = [
-        'youtube.com', 'youtu.be', 'tiktok.com', 'instagram.com', 'vk.com', 'twitter.com', 'x.com', 'facebook.com', 'vimeo.com', 'dailymotion.com'
-    ]
-    for domain in video_domains:
-        if domain in url:
-            return 'video-hosting'
-    return 'unknown'
-
-# Универсальное скачивание файла (фото/видео)
-async def download_file(url: str) -> str:
-    filename = os.path.basename(url.split('?')[0])
-    if not filename:
-        filename = 'file'
-    filepath = os.path.join(TEMP_DIR, filename)
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            if resp.status == 200:
-                with open(filepath, 'wb') as f:
-                    f.write(await resp.read())
-                return filepath
-            else:
-                raise Exception(f"HTTP {resp.status}")
-
-@router.message(F.text.startswith("http"))
-async def handle_link(message: Message):
-    cleanup_old_files()  # Очищаем старые файлы
-
-    url = message.text.strip()
-    await message.answer(f"🔗 Link received: {url}\n⏳ Downloading...")
-
-
-    # ...удалён функционал TikTok и Instagram...
-
-    # Старое поведение для остальных ссылок
-    filetype = guess_file_type(url)
-    if filetype not in ('photo', 'video', 'video-hosting'):
-        await message.answer("❌ Only photo and video links are supported. Please send a direct photo or video file, or a link to one.")
-        return
-    try:
-        if filetype in ('video', 'video-hosting'):
-            filepath = await download_video(url)
-            if not filepath:
-                raise Exception("Failed to download video. It may be unavailable or deleted.")
-        elif filetype == 'photo':
-            filepath = await download_file(url)
-        else:
-            filepath = await download_file(url)
-            with open(filepath, 'rb') as f:
-                head = f.read(512)
-                if b'<html' in head.lower():
-                    raise Exception("The link does not point to a file, but to a web page.")
-        if not filepath:
-            raise Exception("File was not downloaded")
-        file_uuid = str(uuid.uuid4())
-        file_cache[file_uuid] = filepath
-        current_time = time.time()
-        file_cache_times[file_uuid] = current_time
-        ext = os.path.splitext(filepath)[1].lower()
-        media_type = "photo" if ext in {'.jpg', '.jpeg', '.png', '.webp'} else "video" if ext in {'.mp4', '.mov', '.avi', '.webm'} else "document"
-        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-            [
-                types.InlineKeyboardButton(text="5", callback_data=f"copies|5|{file_uuid}|{media_type}"),
-                types.InlineKeyboardButton(text="10", callback_data=f"copies|10|{file_uuid}|{media_type}"),
-                types.InlineKeyboardButton(text="20", callback_data=f"copies|20|{file_uuid}|{media_type}"),
-                types.InlineKeyboardButton(text="30", callback_data=f"copies|30|{file_uuid}|{media_type}"),
-            ],
-            [
-                types.InlineKeyboardButton(text="40", callback_data=f"copies|40|{file_uuid}|{media_type}"),
-                types.InlineKeyboardButton(text="50", callback_data=f"copies|50|{file_uuid}|{media_type}"),
-                types.InlineKeyboardButton(text="75", callback_data=f"copies|75|{file_uuid}|{media_type}"),
-                types.InlineKeyboardButton(text="100", callback_data=f"copies|100|{file_uuid}|{media_type}"),
-            ],
-            [
-                types.InlineKeyboardButton(text="120", callback_data=f"copies|120|{file_uuid}|{media_type}"),
-            ]
-        ])
-        await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
-    except Exception as e:
-        await message.answer(f"❌ Failed to download file: {e}")
 
 # Обработчик для неподдерживаемых сообщений
 @router.message()
 async def handle_unsupported(message: Message):
-    user_data = await get_user(message.from_user.id)
+    # If the message is text, show a hint
+    if message.text:
+        await message.answer("Please send a photo or video file.")
+        return
+    # For other types (stickers, etc.) check limits
+    user_id = message.from_user.id
+    name = message.from_user.first_name or "Unknown"
+    telegram_id = message.from_user.id
+    username = message.from_user.username
+    user_data = await get_user(user_id, name, telegram_id, username)
     if user_data['is_premium']:
-        await message.answer("❌ Please send only photos or videos (or links to them). Other types are not supported.")
+        await message.answer("❌ Please send only photos or videos. Other types are not supported.")
     else:
         remaining = 20 - user_data['files_today']
-        await message.answer(f"❌ Please send only photos or videos (or links to them). You have {remaining} free copies left today. For unlimited access, pay 0.05 USDT: /pay")
+        await message.answer(f"ℹ️ You have {remaining} copies left today. For unlimited access, pay 0.05 USDT: /pay")
 
 # 2️⃣ Обработка кнопки (с путём к файлу)
 @router.callback_query(F.data.startswith("download|"))
@@ -330,7 +258,10 @@ async def process_copies(callback: CallbackQuery):
             return
         await callback.message.answer(f"⏳ Creating {count} copies...")
 
-        await increment_files(callback.from_user.id, count)
+        name = callback.from_user.first_name or "Unknown"
+        telegram_id = str(callback.from_user.id)
+        username = getattr(callback.from_user, 'username', '') or ''  # None if not set -> ''
+        await increment_files(callback.from_user.id, count, name, telegram_id, username)
 
         import random, string
         def long_random_name(length=36):
