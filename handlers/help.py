@@ -4,12 +4,13 @@ from aiogram.types import Message
 
 router = Router()
 
-@router.message(Command("help"))
-async def cmd_help(message: Message):
+@router.message(Command("start"))
+async def cmd_start(message: Message):
     await message.answer(
-        "📖 <b>Help</b>\n\n"
-        "1️⃣ Send a link to a video or profile.\n"
-        "2️⃣ Choose an option: download, overlay, filter.\n"
-        "3️⃣ Get your unique video 🎬\n\n"
-        "❗ If the bot freezes — clear chat and restart."
+        "Welcome to @SludgeAI 🚀\n\n"
+        "Create truly unique videos and images that algorithms won’t flag as duplicates! Sludge AI automatically modifies your media files—altering metadata, applying subtle randomized visual changes, and ensuring every clip or image stands out as one-of-a-kind.\n\n"
+        "The result? Greater reach and a better chance of landing on the FYP and in recommendations!\n\n"
+        "Get started now: upload a video or photo from your gallery ⬇️\n\n"
+        "👀 See real reviews and examples in @sludgevouches!\n\n"
+        "Your content—your voice. Make it seen 🚀"
     )

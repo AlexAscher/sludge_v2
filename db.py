@@ -1,8 +1,10 @@
 from pocketbase import PocketBase
 from config import PB_URL, PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD
-from datetime import date
+from datetime import date, datetime, timezone
+import time
 
 pb = PocketBase(PB_URL)
+
 
 async def init_db():
     # Аутентификация как superuser
@@ -24,13 +26,15 @@ async def init_db():
     # name: plain text
     pass
 
+
 async def get_user(user_id: int, name: str = None, telegram_id: str = None, username: str = None):
     print(f"Searching for user_id = {user_id}")
     try:
-        records = pb.collection('users').get_list(per_page=1000)  # Get all users, assuming not too many
-        filtered_items = [r for r in records.items if r.user_id == user_id]
-        if filtered_items:
-            record = filtered_items[0]
+        records = pb.collection('users').get_list(1, 50, {
+            'filter': f'user_id={user_id}'
+        })
+        if records.items:
+            record = records.items[0]
             print(f"Found existing user: {record.id}, user_id: {record.user_id}, name: {record.name}")
             is_premium = getattr(record, 'is_premium', False)
             files_today = getattr(record, 'files_today', 0)
@@ -41,6 +45,26 @@ async def get_user(user_id: int, name: str = None, telegram_id: str = None, user
             if last_reset_date != date.today():
                 await reset_user_files(user_id)
                 files_today = 0
+            # Check if premium has expired
+            premium_end = getattr(record, 'premium_end', None)
+            parsed_end = None
+            if premium_end:
+                try:
+                    # Handle both formats: with Z (2025-10-19 18:51:54.081Z) and without
+                    if 'Z' in str(premium_end):
+                        parsed_end = datetime.fromisoformat(str(premium_end).replace('Z', '+00:00'))
+                    else:
+                        parsed_end = datetime.fromisoformat(str(premium_end))
+                except Exception as e:
+                    print(f"Failed to parse premium_end for user {user_id}: {premium_end} -> {e}")
+
+            # Always use UTC for comparison
+            now_utc = datetime.now(timezone.utc)
+            expired = parsed_end and parsed_end < now_utc
+            print(
+                f"User {user_id}: premium_end={premium_end}, parsed_end={parsed_end}, now={now_utc}, expired={expired}")
+            if expired:
+                is_premium = False
             # Обновляем name, если передан и отличается
             update_data = {}
             if name and record.name != name:
@@ -71,7 +95,9 @@ async def get_user(user_id: int, name: str = None, telegram_id: str = None, user
             'is_premium': False,
             'files_today': 0,
             'total': 0,
-            'last_reset': str(date.today())
+            'last_reset': str(date.today()),
+            'premium_end': None,
+            'expiry_notified': False
         }
         # Always set username (empty string if missing) to keep schema consistent
         create_payload['username'] = username or ''
@@ -80,12 +106,15 @@ async def get_user(user_id: int, name: str = None, telegram_id: str = None, user
         print(f"Created new user: {record.id}")
     return {'is_premium': False, 'files_today': 0, 'total': 0, 'username': username or '', 'record_id': record.id}
 
-async def increment_files(user_id: int, amount: int = 1, name: str = None, telegram_id: str = None, username: str = None):
+
+async def increment_files(user_id: int, amount: int = 1, name: str = None, telegram_id: str = None,
+                          username: str = None):
     user_data = await get_user(user_id, name, telegram_id, username)
     record_id = user_data['record_id']
     new_files = user_data['files_today'] + amount
     new_total = int(user_data.get('total', 0)) + amount
-    print(f"Incrementing files for user {user_id}: current {user_data['files_today']}, adding {amount}, new {new_files}; total -> {new_total}")
+    print(
+        f"Incrementing files for user {user_id}: current {user_data['files_today']}, adding {amount}, new {new_files}; total -> {new_total}")
     update_payload = {
         'files_today': new_files,
         'total': new_total,
@@ -100,6 +129,7 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
     pb.collection('users').update(record_id, update_payload)
     print(f"Updated user {user_id} files_today to {new_files} and total to {new_total}")
 
+
 async def reset_user_files(user_id: int):
     user_data = await get_user(user_id)
     record_id = user_data['record_id']
@@ -108,10 +138,54 @@ async def reset_user_files(user_id: int):
         'last_reset': str(date.today())
     })
 
-async def set_premium(user_id: int, premium: bool = True):
+
+async def set_premium(user_id: int, premium: bool = True, duration: int = None):
     user_data = await get_user(user_id)
     record_id = user_data['record_id']
-    pb.collection('users').update(record_id, {'is_premium': premium})
+    update_data = {'is_premium': premium}
+    if premium and duration:
+        # Always use UTC: now + duration in seconds
+        premium_end_utc = datetime.now(timezone.utc).timestamp() + duration
+        premium_end_value = datetime.fromtimestamp(premium_end_utc, tz=timezone.utc).isoformat()
+        update_data['premium_end'] = premium_end_value
+        update_data['expiry_notified'] = False
+        print(f"Setting premium for {user_id}: premium_end={premium_end_value} (UTC)")
+    elif not premium:
+        update_data['premium_end'] = None
+    pb.collection('users').update(record_id, update_data)
+    print(f"Premium updated for {user_id}: is_premium={premium}")
+
+
+async def get_expired_users():
+    try:
+        records = pb.collection('users').get_list(1, 1000)
+        expired = []
+        current_time_utc = datetime.now(timezone.utc)
+        for record in records.items:
+            premium_end = getattr(record, 'premium_end', None)
+            expiry_notified = getattr(record, 'expiry_notified', False)
+            parsed = None
+            if premium_end:
+                try:
+                    # Handle both formats: with Z and without
+                    if 'Z' in str(premium_end):
+                        parsed = datetime.fromisoformat(str(premium_end).replace('Z', '+00:00'))
+                    else:
+                        parsed = datetime.fromisoformat(str(premium_end))
+                except Exception as e:
+                    print(
+                        f"Failed to parse premium_end for user {getattr(record, 'user_id', record.id)}: {premium_end} -> {e}")
+
+            is_expired = parsed and parsed < current_time_utc
+            if is_expired and not expiry_notified:
+                print(
+                    f"Found expired user: {getattr(record, 'user_id', record.id)}, premium_end={premium_end}, now={current_time_utc}")
+                expired.append(record)
+
+        return expired
+    except Exception as e:
+        print(f"Error getting expired users: {e}")
+        return []
 
 # Инициализация
 # asyncio.run(init_db())  # Не нужно, поскольку PocketBase управляет

@@ -93,7 +93,6 @@ async def go_back_menu(callback: CallbackQuery):
     is_photo = callback.message.photo is not None
     is_video = callback.message.video is not None
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="Download", callback_data="download_photo" if is_photo else "download_video")],
         [types.InlineKeyboardButton(text="Templates", callback_data="templates"), types.InlineKeyboardButton(text="Tools", callback_data="tools")],
         [types.InlineKeyboardButton(text="Bulk Templates", callback_data="bulk_templates"), types.InlineKeyboardButton(text="Bulk Randomize", callback_data="bulk_randomize")],
         [types.InlineKeyboardButton(text="Get Paid to Post 💰", callback_data="get_paid")],
@@ -151,6 +150,8 @@ async def handle_photo(message: Message):
         ]
     ])
     await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
+
+
 @router.message(F.video)
 async def handle_video(message: Message):
     cleanup_old_files()  # Очищаем старые файлы
@@ -216,26 +217,7 @@ async def handle_unsupported(message: Message):
         await message.answer(f"ℹ️ You have {remaining} copies left today. For unlimited access, pay 0.05 USDT: /pay")
 
 # 2️⃣ Обработка кнопки (с путём к файлу)
-@router.callback_query(F.data.startswith("download|"))
-async def process_download(callback: CallbackQuery):
-    cleanup_old_files()  # Очищаем старые файлы
-
-    await callback.message.answer("⏳ Processing file...")
-
-    try:
-        _, input_file = callback.data.split("|", 1)
-        ext = os.path.splitext(input_file)[1].lower()
-        if ext in {'.jpg', '.jpeg', '.png', '.webp'}:
-            output_file = randomize_exif(input_file)
-            await callback.message.answer_photo(types.FSInputFile(output_file), caption="✅ Done! Here is your file with new metadata.")
-        elif ext in {'.mp4', '.mov', '.avi', '.webm'}:
-            output_file = randomize_metadata(input_file)
-            await callback.message.answer_video(types.FSInputFile(output_file), caption="✅ Done! Here is your file with new metadata.")
-        else:
-            output_file = randomize_metadata(input_file)
-            await callback.message.answer_document(types.FSInputFile(output_file), caption="✅ Done! Here is your file with new metadata.")
-    except Exception as e:
-        await callback.message.answer(f"❌ Error: {e}")
+# Note: download callback handler intentionally removed — download button is no longer used.
 
 # Обработка выбора количества копий
 @router.callback_query(F.data.startswith("copies|"))
