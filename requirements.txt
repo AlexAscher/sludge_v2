@@ -16,4 +16,5 @@ aiosend==3.0.2        # для оплаты через CryptoBot
 aiosqlite==0.19.0     # для SQLite базы данных
 APScheduler==3.10.4   # для планировщика задач
 pocketbase            # для PocketBase базы данных
+opencv-python==4.8.1.78
 #some stugg
