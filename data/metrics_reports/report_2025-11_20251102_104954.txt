@@ -1,0 +1,20 @@
+Monthly report for 2025-11
+
+Per-day details:
+
+2025-11-02: files=10, 0.0019 GB, premium_purchased=0
+Active users:
+  Alexey (6095619097): free
+  Benzo_CEO (1083333734): free
+
+
+Summary:
+
+Files this month: 10
+Bytes this month: 0.0019 GB
+Premium purchased this month: 0
+Files all time: 40
+Total bytes all time: 0.0102 GB
+Storage cumulative (tracked uploads): 0.0102 GB
+Total users (approx): 2
+Paid users (approx): 0

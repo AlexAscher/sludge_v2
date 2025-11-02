@@ -29,3 +29,7 @@ S3_ENDPOINT = os.getenv("S3_ENDPOINT")  # Для DigitalOcean Spaces: https://[r
 PB_URL = os.getenv("PB_URL", "http://127.0.0.1:8090")  # URL PocketBase сервера
 PB_ADMIN_EMAIL = os.getenv("PB_ADMIN_EMAIL")  # Email superuser для аутентификации
 PB_ADMIN_PASSWORD = os.getenv("PB_ADMIN_PASSWORD")  # Пароль superuser
+
+# Режим сброса счётчика files_today: '3min' или 'daily'
+# По умолчанию используется '3min' для удобного тестирования.
+RESET_MODE = os.getenv("RESET_MODE", "3min")

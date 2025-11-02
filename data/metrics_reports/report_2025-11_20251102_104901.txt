@@ -1,0 +1,19 @@
+Monthly report for 2025-11
+
+Per-day details:
+
+2025-11-02: files=5, 0.0009 GB, premium_purchased=0
+Active users:
+  Alexey (6095619097): free
+
+
+Summary:
+
+Files this month: 5
+Bytes this month: 0.0009 GB
+Premium purchased this month: 0
+Files all time: 35
+Total bytes all time: 0.0092 GB
+Storage cumulative (tracked uploads): 0.0092 GB
+Total users (approx): 1
+Paid users (approx): 0
