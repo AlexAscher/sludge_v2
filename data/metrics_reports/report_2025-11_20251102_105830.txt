@@ -1,0 +1,20 @@
+Monthly report for 2025-11
+
+Per-day details:
+
+2025-11-02: files=15, 0.0031 GB, premium_purchased=0
+Active users:
+  Benzo_CEO (1083333734): free, files=5, Memory=0.0012 GB, telegramID=1083333734
+  Alexey (6095619097): free, files=0, Memory=0.0 GB, telegramID=6095619097
+
+
+Summary:
+
+Files this month: 15
+Bytes this month: 0.0031 GB
+Premium purchased this month: 0
+Files all time: 45
+Total bytes all time: 0.0114 GB
+Storage cumulative (tracked uploads): 0.0114 GB
+Total users (approx): 2
+Paid users (approx): 0

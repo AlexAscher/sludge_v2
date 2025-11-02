@@ -4,13 +4,14 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import BOT_TOKEN, CRYPTOBOT_TOKEN
-from handlers import start, help, process
+from handlers import start, help, process, stats
 from db import get_user, increment_files, set_premium, init_db, get_expired_users, pb
 from aiosend import CryptoPay, TESTNET
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 import logging
 import functools
+from services import metrics
 
 logging.basicConfig(level=logging.INFO)
 
@@ -25,6 +26,7 @@ async def check_payments(bot: Bot, cryptopay: CryptoPay):
             invoice = await cryptopay.get_invoice(invoice_id)
             if invoice.status == 'paid':
                 await set_premium(user_id, True, 30)  # 30 seconds premium
+                await metrics.record_premium_purchase(user_id)
                 await bot.send_message(user_id, "✅ Payment received! You now have unlimited access for 30 seconds.")
                 del pending_payments[user_id]
         except Exception as e:
@@ -56,6 +58,7 @@ async def check_expired_premiums(bot: Bot):
 
 async def limit_middleware(handler, event, data):
     """Middleware для проверки лимита файлов"""
+    logging.info(f"Middleware: received message from {event.from_user.id}: '{event.text}'")
     if isinstance(event, types.Message) and event.text and not event.text.startswith('/'):
         user_id = event.from_user.id
         name = event.from_user.first_name or "Unknown"
@@ -134,6 +137,7 @@ async def callback_handler(cryptopay: CryptoPay, callback: types.CallbackQuery):
 
 
 async def main():
+    logging.info("Starting bot main function")
     # Инициализация базы данных и аутентификация
     await init_db()
 
@@ -152,7 +156,9 @@ async def main():
     # Регистрируем хендлеры
     dp.include_router(start.router)
     dp.include_router(help.router)
+    dp.include_router(stats.router)
     dp.include_router(process.router)
+    logging.info("All routers included: start, help, stats, process")
 
     # Команда оплаты
     dp.message.register(functools.partial(pay_command, cryptopay), Command("pay"))
@@ -168,6 +174,18 @@ async def main():
     scheduler.start()
 
     print("🤖 Bot started with payment system...")
+    # Set bot commands
+    try:
+        await bot.set_my_commands([
+            types.BotCommand(command="start", description="Start the bot"),
+            types.BotCommand(command="help", description="Get help"),
+            types.BotCommand(command="pay", description="Pay for premium access"),
+            types.BotCommand(command="stats", description="Get usage statistics"),
+        ])
+        logging.info("Bot commands set successfully")
+    except Exception as e:
+        logging.error(f"Failed to set bot commands: {e}")
+    logging.info("Starting polling...")
     try:
         await dp.start_polling(bot)
     finally:

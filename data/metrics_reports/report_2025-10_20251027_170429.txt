@@ -1,0 +1,16 @@
+Monthly report for 2025-10
+
+Per-day details:
+
+2025-10-27: files=5, bytes=1328977 (0.0012 GB), premium_purchased=0, unique_users=1
+
+Summary:
+
+Files this month: 5
+Bytes this month: 1328977 (0.0012 GB)
+Premium purchased this month: 0
+Files all time: 5
+Total bytes all time: 1328977 (0.0012 GB)
+Storage cumulative (tracked uploads): 1328977 (0.0012 GB)
+Total users (approx): 2
+Paid users (approx): 0

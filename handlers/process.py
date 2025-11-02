@@ -19,6 +19,7 @@ from collections import defaultdict
 import zipfile
 import shutil
 from db import increment_files, get_user
+from services import metrics
 
 router = Router()
 
@@ -115,6 +116,7 @@ async def go_back_menu(callback: CallbackQuery):
 
 @router.message(F.photo)
 async def handle_photo(message: Message):
+    logging.info(f"Received photo from {message.from_user.id}")
     cleanup_old_files()  # Очищаем старые файлы
 
     user_id = message.from_user.id
@@ -125,10 +127,12 @@ async def handle_photo(message: Message):
         return
 
     photo = message.photo[-1]
+    logging.info(f"Downloading photo {photo.file_id}")
     file = await message.bot.get_file(photo.file_id)
     file_path = file.file_path
     dest_path = os.path.join(TEMP_DIR, f"{photo.file_id}.jpg")
     await message.bot.download_file(file_path, dest_path)
+    logging.info(f"Photo downloaded to {dest_path}")
     # Ensure user record exists and username is stored
     name = message.from_user.first_name or "Unknown"
     username = message.from_user.username
@@ -374,6 +378,13 @@ async def choose_watermark_position(callback: CallbackQuery):
             s3_client.upload_file(result_path, S3_BUCKET_NAME, key,
                                   ExtraArgs={'ContentType': guessed_type})
 
+            # Record metrics: count file and bytes uploaded
+            try:
+                size = os.path.getsize(result_path) if os.path.exists(result_path) else 0
+                await metrics.record_file_processed(callback.from_user.id, size)
+            except Exception as e:
+                logging.error(f"Failed to record metrics for user {callback.from_user.id}: {e}")
+
             # Получаем presigned URL
             url = s3_client.generate_presigned_url(
                 'get_object',
@@ -397,11 +408,45 @@ async def choose_watermark_position(callback: CallbackQuery):
                     f"Link valid for 1 hour."
                 )
 
+            # Increment user counters: watermarking counts as one processed file
+            try:
+                name = callback.from_user.first_name or "Unknown"
+                telegram_id = str(callback.from_user.id)
+                username = getattr(callback.from_user, 'username', '') or ''
+                await increment_files(callback.from_user.id, 1, name, telegram_id, username)
+            except Exception as e:
+                logging.error(f"Failed to increment files for user {callback.from_user.id}: {e}")
+
             # Очищаем временные файлы
-            os.remove(result_path)
+            try:
+                if os.path.exists(result_path):
+                    os.remove(result_path)
+            except Exception:
+                pass
             if watermark_type == 'image' and 'watermark_image_path' in state:
                 if os.path.exists(state['watermark_image_path']):
                     os.remove(state['watermark_image_path'])
+            # Удаляем оригинальный файл и кэш (если был сохранён)
+            try:
+                file_uuid = state.get('file_uuid')
+                orig_path = state.get('file_path')
+                if orig_path and os.path.exists(orig_path):
+                    try:
+                        os.remove(orig_path)
+                    except Exception:
+                        pass
+                if file_uuid and file_uuid in file_cache:
+                    try:
+                        del file_cache[file_uuid]
+                    except Exception:
+                        pass
+                if file_uuid and file_uuid in file_cache_times:
+                    try:
+                        del file_cache_times[file_uuid]
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
             # Очищаем состояние
             del watermark_state[user_id]
@@ -412,7 +457,31 @@ async def choose_watermark_position(callback: CallbackQuery):
             # Очищаем временные файлы при ошибке
             if watermark_type == 'image' and 'watermark_image_path' in state:
                 if os.path.exists(state['watermark_image_path']):
-                    os.remove(state['watermark_image_path'])
+                    try:
+                        os.remove(state['watermark_image_path'])
+                    except Exception:
+                        pass
+            # Удаляем оригинальный файл и кэш (если есть)
+            try:
+                file_uuid = state.get('file_uuid')
+                orig_path = state.get('file_path')
+                if orig_path and os.path.exists(orig_path):
+                    try:
+                        os.remove(orig_path)
+                    except Exception:
+                        pass
+                if file_uuid and file_uuid in file_cache:
+                    try:
+                        del file_cache[file_uuid]
+                    except Exception:
+                        pass
+                if file_uuid and file_uuid in file_cache_times:
+                    try:
+                        del file_cache_times[file_uuid]
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             del watermark_state[user_id]
 
     except Exception as e:
@@ -532,6 +601,7 @@ async def handle_watermark_image(message: Message):
 # Обработчик для неподдерживаемых сообщений
 @router.message()
 async def handle_unsupported(message: Message):
+    logging.info(f"Received unsupported message from {message.from_user.id}: {message.text or message.caption or 'non-text'}")
     # If the message is text, show a hint
     if message.text:
         await message.answer("Please send a photo or video file.")
@@ -556,35 +626,49 @@ async def handle_unsupported(message: Message):
 async def process_copies(callback: CallbackQuery):
     cleanup_old_files()  # Очищаем старые файлы
 
+    parts = callback.data.split("|")
+    if len(parts) != 4:
+        await callback.answer("Invalid data", show_alert=True)
+        return
+    _, count_str, file_uuid, media_type = parts
+    count = int(count_str)
+    if count < 1 or count > 120:
+        await callback.answer("Invalid count", show_alert=True)
+        return
+
+    filepath = file_cache.get(file_uuid)
+    if not filepath:
+        await callback.answer("File not found", show_alert=True)
+        return
+
+    # Prepare containers for cleanup
+    output_files = []
+    file_names = []
+    download_links = []
+    session_id = str(uuid.uuid4())
+
     try:
-        parts = callback.data.split("|")
-        if len(parts) != 4:
-            await callback.answer("Invalid data", show_alert=True)
-            return
-        _, count_str, file_uuid, media_type = parts
-        count = int(count_str)
-        if count < 1 or count > 120:
-            await callback.answer("Invalid count", show_alert=True)
-            return
-        filepath = file_cache.get(file_uuid)
-        if not filepath:
-            await callback.answer("File not found", show_alert=True)
-            return
         await callback.message.answer(f"⏳ Creating {count} copies...")
 
         name = callback.from_user.first_name or "Unknown"
         telegram_id = str(callback.from_user.id)
         username = getattr(callback.from_user, 'username', '') or ''  # None if not set -> ''
+        # Debug: лог до и после инкремента — помогает отследить перезапись vs накопление
+        try:
+            before = await get_user(callback.from_user.id, name, telegram_id, username)
+            logging.info(f"[debug] before increment: user={callback.from_user.id} files_today={before.get('files_today')} total={before.get('total')} last_reset (not shown)")
+        except Exception:
+            logging.exception("[debug] failed to fetch user before increment")
         await increment_files(callback.from_user.id, count, name, telegram_id, username)
+        try:
+            after = await get_user(callback.from_user.id, name, telegram_id, username)
+            logging.info(f"[debug] after increment: user={callback.from_user.id} files_today={after.get('files_today')} total={after.get('total')} last_reset (not shown)")
+        except Exception:
+            logging.exception("[debug] failed to fetch user after increment")
 
         import random, string
         def long_random_name(length=36):
             return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
-
-        session_id = str(uuid.uuid4())
-        download_links = []
-        output_files = []  # Список для хранения путей к копиям
-        file_names = []  # Список для хранения имён файлов
 
         for i in range(count):
             try:
@@ -628,6 +712,12 @@ async def process_copies(callback: CallbackQuery):
                     content_type = 'application/octet-stream'
                 s3_client.upload_file(output_file, S3_BUCKET_NAME, key, ExtraArgs={'ContentType': content_type})
                 logging.info(f"Uploaded to S3: {key}")
+                # record metrics per generated copy
+                try:
+                    size = os.path.getsize(output_file) if os.path.exists(output_file) else 0
+                    await metrics.record_file_processed(callback.from_user.id, size)
+                except Exception as e:
+                    logging.error(f"Failed to record metrics for user {callback.from_user.id} on copy {i+1}: {e}")
 
                 # Получаем presigned URL
                 url = s3_client.generate_presigned_url(
@@ -778,19 +868,28 @@ async def process_copies(callback: CallbackQuery):
 
         await callback.message.answer(f"✅ Your copies are ready! View and download them here: {page_url}")
 
-        # Удаляем временные файлы
+    except Exception as e:
+        logging.error(f"Error in process_copies: {e}")
+        await callback.answer(f"❌ Error: {e}", show_alert=True)
+    finally:
+        # Удаляем временные файлы и очищаем кэш в любом случае
         try:
             for f in output_files:
                 if os.path.exists(f):
                     os.remove(f)
-            if os.path.exists(filepath):
-                os.remove(filepath)
-            # Очищаем кэш
-            del file_cache[file_uuid]
-            del file_cache_times[file_uuid]
+            # original uploaded file
+            if filepath and os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except Exception:
+                    pass
+            # cleanup cache entries if present
+            try:
+                if file_uuid in file_cache:
+                    del file_cache[file_uuid]
+                if file_uuid in file_cache_times:
+                    del file_cache_times[file_uuid]
+            except Exception:
+                pass
         except Exception as e:
-            logging.error(f"Error cleaning up files: {e}")
-
-    except Exception as e:
-        logging.error(f"Error in process_copies: {e}")
-        await callback.answer(f"❌ Error: {e}", show_alert=True)
+            logging.error(f"Error cleaning up files in finally: {e}")
