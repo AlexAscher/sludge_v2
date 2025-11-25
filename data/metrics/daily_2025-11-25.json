@@ -1,15 +1,15 @@
 {
   "date": "2025-11-25",
-  "files": 305,
-  "bytes": 56924105,
+  "files": 334,
+  "bytes": 60678922,
   "premium_purchased": 2,
   "unique_users": [
     "6095619097"
   ],
   "user_details": {
     "6095619097": {
-      "files": 305,
-      "bytes": 56924105
+      "files": 334,
+      "bytes": 60678922
     }
   }
 }

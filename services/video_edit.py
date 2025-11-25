@@ -33,8 +33,29 @@ def randomize_metadata(input_file: str, output_file: str = None) -> str:
 
     logging.info(f"Applied effects: brightness={brightness:.4f}, contrast={contrast:.4f}, saturation={saturation:.4f}, noise_strength={noise_strength:.1f}")
 
-    # Составляем цепочку фильтров для ffmpeg
-    filter_chain = f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation},noise=alls={noise_strength}:allf=t+u"
+    # Получаем размеры видео для случайного пикселя
+    probe_cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=p=0",
+        input_file
+    ]
+    probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+    try:
+        width, height = map(int, probe_result.stdout.strip().split(','))
+    except Exception:
+        width, height = 1920, 1080  # fallback
+
+    # Случайный пиксель и цвет для drawbox
+    px = random.randint(0, max(0, width - 1))
+    py = random.randint(0, max(0, height - 1))
+    r, g, b = random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)
+    pixel_color = f"0x{r:02X}{g:02X}{b:02X}"
+    logging.info(f"Replacing pixel at ({px}, {py}) with color {pixel_color}")
+
+    # Составляем цепочку фильтров для ffmpeg (с drawbox 1x1 для пикселя)
+    filter_chain = f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation},noise=alls={noise_strength}:allf=t+u,drawbox=x={px}:y={py}:w=1:h=1:color={pixel_color}:t=fill"
 
     cmd = [
         "ffmpeg",
