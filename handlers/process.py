@@ -185,11 +185,40 @@ async def handle_video(message: Message):
     cleanup_old_files()  # Очищаем старые файлы
 
     video = message.video
+    file_size_mb = video.file_size / (1024 * 1024) if video.file_size else 0
+
+    # Проверяем размер файла (Telegram Bot API лимит 20 МБ)
+    if video.file_size and video.file_size > 20 * 1024 * 1024:
+        await message.answer(
+            f"❌ Video file is too large ({file_size_mb:.1f} MB).\n\n"
+            f"Telegram Bot API limit: 20 MB\n\n"
+            f"Please send a smaller video or compress it first."
+        )
+        return
+
     file = await message.bot.get_file(video.file_id)
     file_path = file.file_path
     ext = os.path.splitext(file_path)[1] or ".mp4"
     dest_path = os.path.join(TEMP_DIR, f"{video.file_id}{ext}")
-    await message.bot.download_file(file_path, dest_path)
+
+    # Показываем прогресс
+    progress_msg = await message.answer(f"⏳ Downloading video ({file_size_mb:.1f} MB)...")
+
+    # Скачиваем с обработкой таймаута
+    try:
+        await message.bot.download_file(file_path, dest_path)
+        await progress_msg.delete()
+    except TimeoutError:
+        await progress_msg.edit_text(
+            f"❌ Timeout while downloading video ({file_size_mb:.1f} MB).\n\n"
+            f"Please try a smaller file or check your connection."
+        )
+        return
+    except Exception as e:
+        logging.error(f"Error downloading video: {e}")
+        await progress_msg.edit_text(f"❌ Error downloading video: {e}")
+        return
+
     # Ensure user record exists and username is stored
     user_id = message.from_user.id
     name = message.from_user.first_name or "Unknown"
