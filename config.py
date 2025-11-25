@@ -32,4 +32,7 @@ PB_ADMIN_PASSWORD = os.getenv("PB_ADMIN_PASSWORD")  # Пароль superuser
 
 # Режим сброса счётчика files_today: '3min' или 'daily'
 # По умолчанию используется '3min' для удобного тестирования.
-RESET_MODE = os.getenv("RESET_MODE", "3min")
+RESET_MODE = os.getenv("RESET_MODE", "daily")
+
+# Free daily copies limit for non-premium users (can be overridden via env)
+FREE_DAILY_LIMIT = int(os.getenv('FREE_DAILY_LIMIT', '100'))
