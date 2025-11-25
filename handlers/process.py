@@ -29,6 +29,9 @@ file_cache_times = {}
 
 user_files = defaultdict(list)  # {user_id: [file_paths]}
 
+# Отслеживание последнего файла каждого пользователя: {user_id: {'file_uuid': uuid, 'file_path': path}}
+user_last_file = {}
+
 # Состояние для Watermark: {user_id: {'file_path': path, 'file_type': 'photo/video', 'step': 'choosing_type', 'watermark_type': 'text/image'}}
 watermark_state = defaultdict(dict)
 
@@ -132,6 +135,25 @@ async def handle_photo(message: Message):
         await handle_watermark_image(message)
         return
 
+    # Удаляем предыдущий файл пользователя, если он есть
+    if user_id in user_last_file:
+        old_file_uuid = user_last_file[user_id].get('file_uuid')
+        old_file_path = user_last_file[user_id].get('file_path')
+
+        # Удаляем файл с диска
+        if old_file_path and os.path.exists(old_file_path):
+            try:
+                os.remove(old_file_path)
+                logging.info(f"Removed old file for user {user_id}: {old_file_path}")
+            except Exception as e:
+                logging.error(f"Error removing old file: {e}")
+
+        # Удаляем из кэша
+        if old_file_uuid and old_file_uuid in file_cache:
+            del file_cache[old_file_uuid]
+        if old_file_uuid and old_file_uuid in file_cache_times:
+            del file_cache_times[old_file_uuid]
+
     photo = message.photo[-1]
     logging.info(f"Downloading photo {photo.file_id}")
     file = await message.bot.get_file(photo.file_id)
@@ -149,6 +171,13 @@ async def handle_photo(message: Message):
     file_cache[file_uuid] = dest_path
     current_time = time.time()
     file_cache_times[file_uuid] = current_time
+
+    # Сохраняем как последний файл пользователя
+    user_last_file[user_id] = {
+        'file_uuid': file_uuid,
+        'file_path': dest_path
+    }
+
     # Вместо обработки, отправляем сообщение с выбором количества копий
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -196,6 +225,27 @@ async def handle_video(message: Message):
         )
         return
 
+    user_id = message.from_user.id
+
+    # Удаляем предыдущий файл пользователя, если он есть
+    if user_id in user_last_file:
+        old_file_uuid = user_last_file[user_id].get('file_uuid')
+        old_file_path = user_last_file[user_id].get('file_path')
+
+        # Удаляем файл с диска
+        if old_file_path and os.path.exists(old_file_path):
+            try:
+                os.remove(old_file_path)
+                logging.info(f"Removed old file for user {user_id}: {old_file_path}")
+            except Exception as e:
+                logging.error(f"Error removing old file: {e}")
+
+        # Удаляем из кэша
+        if old_file_uuid and old_file_uuid in file_cache:
+            del file_cache[old_file_uuid]
+        if old_file_uuid and old_file_uuid in file_cache_times:
+            del file_cache_times[old_file_uuid]
+
     file = await message.bot.get_file(video.file_id)
     file_path = file.file_path
     ext = os.path.splitext(file_path)[1] or ".mp4"
@@ -220,7 +270,6 @@ async def handle_video(message: Message):
         return
 
     # Ensure user record exists and username is stored
-    user_id = message.from_user.id
     name = message.from_user.first_name or "Unknown"
     username = message.from_user.username
     await get_user(user_id, name, str(user_id), username)
@@ -230,6 +279,13 @@ async def handle_video(message: Message):
     file_cache[file_uuid] = dest_path
     current_time = time.time()
     file_cache_times[file_uuid] = current_time
+
+    # Сохраняем как последний файл пользователя
+    user_last_file[user_id] = {
+        'file_uuid': file_uuid,
+        'file_path': dest_path
+    }
+
     # Вместо обработки, отправляем сообщение с выбором количества копий
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
         [
