@@ -1,4 +1,3 @@
-
 # ...existing code...
 
 
@@ -7,14 +6,16 @@ from aiogram.types import Message, CallbackQuery
 ## download_video больше не используется
 from services.video_edit import randomize_metadata
 from services.photo_edit import randomize_exif
-from services.watermark import add_watermark_image, add_watermark_video, add_image_watermark_image, add_image_watermark_video, WATERMARK_POSITIONS
+from services.watermark import add_watermark_image, add_watermark_video, add_image_watermark_image, \
+    add_image_watermark_video, WATERMARK_POSITIONS
 import mimetypes
 import aiohttp
 import os
 import uuid
 import boto3
 import time
-from config import TEMP_DIR, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME, S3_REGION, S3_ENDPOINT
+from config import TEMP_DIR, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME, S3_REGION, S3_ENDPOINT, \
+    FREE_DAILY_LIMIT
 from collections import defaultdict
 import zipfile
 import shutil
@@ -30,6 +31,7 @@ user_files = defaultdict(list)  # {user_id: [file_paths]}
 
 # Состояние для Watermark: {user_id: {'file_path': path, 'file_type': 'photo/video', 'step': 'choosing_type', 'watermark_type': 'text/image'}}
 watermark_state = defaultdict(dict)
+
 
 def cleanup_old_files():
     """Удаляет файлы старше 24 часов из кэша и с диска."""
@@ -47,6 +49,7 @@ def cleanup_old_files():
         if not user_files[user_id]:
             del user_files[user_id]
 
+
 # S3 client
 s3_client = boto3.client(
     's3',
@@ -61,13 +64,12 @@ s3_client = boto3.client(
 # Autocrop callback
 
 import logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger_caption = logging.getLogger("caption_handler")
-
-
 
 
 ## Удалено дублирование импортов и router = Router()
@@ -97,17 +99,21 @@ async def go_back_menu(callback: CallbackQuery):
     is_photo = callback.message.photo is not None
     is_video = callback.message.video is not None
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="Templates", callback_data="templates"), types.InlineKeyboardButton(text="Tools", callback_data="tools")],
-        [types.InlineKeyboardButton(text="Bulk Templates", callback_data="bulk_templates"), types.InlineKeyboardButton(text="Bulk Randomize", callback_data="bulk_randomize")],
+        [types.InlineKeyboardButton(text="Templates", callback_data="templates"),
+         types.InlineKeyboardButton(text="Tools", callback_data="tools")],
+        [types.InlineKeyboardButton(text="Bulk Templates", callback_data="bulk_templates"),
+         types.InlineKeyboardButton(text="Bulk Randomize", callback_data="bulk_randomize")],
         [types.InlineKeyboardButton(text="Get Paid to Post 💰", callback_data="get_paid")],
         [types.InlineKeyboardButton(text="Monthly Subscription", callback_data="monthly_sub")],
         [types.InlineKeyboardButton(text="Annual Subscription (3 months free)", callback_data="annual_sub")],
     ])
     try:
         if is_photo:
-            await callback.message.edit_caption(caption="✅ Done! Here is your photo with new metadata.", reply_markup=keyboard)
+            await callback.message.edit_caption(caption="✅ Done! Here is your photo with new metadata.",
+                                                reply_markup=keyboard)
         elif is_video:
-            await callback.message.edit_caption(caption="✅ Done! Here is your video with new metadata.", reply_markup=keyboard)
+            await callback.message.edit_caption(caption="✅ Done! Here is your video with new metadata.",
+                                                reply_markup=keyboard)
         else:
             await callback.message.edit_reply_markup(reply_markup=keyboard)
     except Exception as e:
@@ -162,6 +168,13 @@ async def handle_photo(message: Message):
         ],
         [
             types.InlineKeyboardButton(text="💧 Add Watermark", callback_data=f"watermark|{file_uuid}|photo"),
+        ],
+        # Subscription buttons stacked full-width
+        [
+            types.InlineKeyboardButton(text="Ежемесячная подписка", callback_data=f"subscribe|monthly"),
+        ],
+        [
+            types.InlineKeyboardButton(text="Годовая подписка (4 месяца бесплатно)", callback_data=f"subscribe|yearly"),
         ]
     ])
     await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
@@ -207,12 +220,16 @@ async def handle_video(message: Message):
         ],
         [
             types.InlineKeyboardButton(text="💧 Add Watermark", callback_data=f"watermark|{file_uuid}|video"),
+        ],
+        # Subscription buttons stacked full-width
+        [
+            types.InlineKeyboardButton(text="Ежемесячная подписка", callback_data=f"subscribe|monthly"),
+        ],
+        [
+            types.InlineKeyboardButton(text="Годовая подписка (4 месяца бесплатно)", callback_data=f"subscribe|yearly"),
         ]
     ])
     await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
-
-
-
 
 
 # Watermark handlers
@@ -256,6 +273,7 @@ async def start_watermark(callback: CallbackQuery):
     except Exception as e:
         logging.error(f"Watermark start error: {e}")
         await callback.answer("Error starting watermark process", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("watermark_type|"))
 async def choose_watermark_type(callback: CallbackQuery):
@@ -302,6 +320,7 @@ async def choose_watermark_type(callback: CallbackQuery):
         logging.error(f"Watermark type selection error: {e}")
         await callback.answer("Error selecting watermark type", show_alert=True)
 
+
 @router.callback_query(F.data == "cancel_watermark")
 async def cancel_watermark(callback: CallbackQuery):
     """Отмена добавления водяного знака"""
@@ -320,6 +339,7 @@ async def cancel_watermark(callback: CallbackQuery):
         "❌ Watermark cancelled.\n\n"
         "Send me a photo or video to get started."
     )
+
 
 @router.callback_query(F.data.startswith("watermark_pos|"))
 async def choose_watermark_position(callback: CallbackQuery):
@@ -488,6 +508,7 @@ async def choose_watermark_position(callback: CallbackQuery):
         logging.error(f"Watermark position error: {e}")
         await callback.answer("Error processing watermark", show_alert=True)
 
+
 # Обработчик текстовых сообщений для watermark
 @router.message(F.text)
 async def handle_watermark_text(message: Message):
@@ -541,7 +562,43 @@ async def handle_watermark_text(message: Message):
 
         return
 
-    # Если не в режиме watermark, ничего не делаем (будет обработано другими хендлерами)
+    # Если не в режиме watermark, показываем приветственное сообщение
+    # и статус использования для не-премиум пользователей
+    user_id = message.from_user.id
+    name = message.from_user.first_name or "Unknown"
+    telegram_id = str(message.from_user.id)
+    username = message.from_user.username
+
+    try:
+        user_data = await get_user(user_id, name, telegram_id, username)
+        is_premium = user_data.get('is_premium', False)
+
+        welcome_text = (
+            "Welcome to @SludgeAI 🚀\n\n"
+            "Create truly unique videos and images that algorithms won't flag as duplicates! Sludge AI automatically modifies your media files—altering metadata, applying subtle randomized visual changes, and ensuring every clip or image stands out as one-of-a-kind.\n\n"
+            "The result? Greater reach and a better chance of landing on the FYP and in recommendations!\n\n"
+            "Get started now: upload a video or photo from your gallery ⬇️\n\n"
+            "👀 See real reviews and examples in @sludgevouches!\n\n"
+            "Your content—your voice. Make it seen 🚀"
+        )
+
+        if not is_premium:
+            files_used = user_data.get('files_today', 0)
+            remaining = max(0, FREE_DAILY_LIMIT - files_used)
+            welcome_text += f"\n\n📊 Files used today: {files_used}/{FREE_DAILY_LIMIT}\n📦 Remaining: {remaining}\n\n✨ Upgrade to premium for unlimited access: /pay 💎"
+
+        await message.answer(welcome_text)
+    except Exception as e:
+        logging.error(f"Error getting user data in text handler: {e}")
+        await message.answer(
+            "Welcome to @SludgeAI 🚀\n\n"
+            "Create truly unique videos and images that algorithms won't flag as duplicates! Sludge AI automatically modifies your media files—altering metadata, applying subtle randomized visual changes, and ensuring every clip or image stands out as one-of-a-kind.\n\n"
+            "The result? Greater reach and a better chance of landing on the FYP and in recommendations!\n\n"
+            "Get started now: upload a video or photo from your gallery ⬇️\n\n"
+            "👀 See real reviews and examples in @sludgevouches!\n\n"
+            "Your content—your voice. Make it seen 🚀"
+        )
+
 
 # Обработчик изображений для watermark
 async def handle_watermark_image(message: Message):
@@ -598,25 +655,15 @@ async def handle_watermark_image(message: Message):
 
         return
 
+
 # Обработчик для неподдерживаемых сообщений
 @router.message()
 async def handle_unsupported(message: Message):
-    logging.info(f"Received unsupported message from {message.from_user.id}: {message.text or message.caption or 'non-text'}")
-    # If the message is text, show a hint
-    if message.text:
-        await message.answer("Please send a photo or video file.")
-        return
-    # For other types (stickers, etc.) check limits
-    user_id = message.from_user.id
-    name = message.from_user.first_name or "Unknown"
-    telegram_id = message.from_user.id
-    username = message.from_user.username
-    user_data = await get_user(user_id, name, telegram_id, username)
-    if user_data['is_premium']:
-        await message.answer("❌ Please send only photos or videos. Other types are not supported.")
-    else:
-        remaining = 20 - user_data['files_today']
-        await message.answer(f"ℹ️ You have {remaining} copies left today. For unlimited access, pay 0.05 USDT: /pay")
+    logging.info(
+        f"Received unsupported message from {message.from_user.id}: {message.text or message.caption or 'non-text'}")
+    # For any unsupported message type, just inform user
+    await message.answer("❌ Please send only photos or videos. Other types are not supported.")
+
 
 # 2️⃣ Обработка кнопки (с путём к файлу)
 # Note: download callback handler intentionally removed — download button is no longer used.
@@ -652,19 +699,21 @@ async def process_copies(callback: CallbackQuery):
 
         name = callback.from_user.first_name or "Unknown"
         telegram_id = str(callback.from_user.id)
-        username = getattr(callback.from_user, 'username', '') or ''  # None if not set -> ''
-        # Debug: лог до и после инкремента — помогает отследить перезапись vs накопление
-        try:
-            before = await get_user(callback.from_user.id, name, telegram_id, username)
-            logging.info(f"[debug] before increment: user={callback.from_user.id} files_today={before.get('files_today')} total={before.get('total')} last_reset (not shown)")
-        except Exception:
-            logging.exception("[debug] failed to fetch user before increment")
-        await increment_files(callback.from_user.id, count, name, telegram_id, username)
-        try:
-            after = await get_user(callback.from_user.id, name, telegram_id, username)
-            logging.info(f"[debug] after increment: user={callback.from_user.id} files_today={after.get('files_today')} total={after.get('total')} last_reset (not shown)")
-        except Exception:
-            logging.exception("[debug] failed to fetch user after increment")
+        username = getattr(callback.from_user, 'username', '') or ''
+
+        # Try to reserve quota before heavy processing
+        reserved = await increment_files(callback.from_user.id, count, name, telegram_id, username, enforce_limit=True)
+        if not reserved:
+            # Limit exceeded - get current usage to show user
+            try:
+                user_data = await get_user(callback.from_user.id, name, telegram_id, username)
+                remaining = max(0, FREE_DAILY_LIMIT - user_data.get('files_today', 0))
+            except Exception:
+                remaining = 0
+            await callback.message.answer(
+                f"❌ You reached the limit of {FREE_DAILY_LIMIT} copies per day. You have {remaining} remaining. Upgrade to premium for unlimited access: /pay"
+            )
+            return
 
         import random, string
         def long_random_name(length=36):
@@ -672,7 +721,7 @@ async def process_copies(callback: CallbackQuery):
 
         for i in range(count):
             try:
-                logging.info(f"Creating copy { i +1}")
+                logging.info(f"Creating copy {i + 1}")
                 if media_type == "photo":
                     output_file = randomize_exif(filepath)
                 elif media_type == "video":
@@ -717,7 +766,7 @@ async def process_copies(callback: CallbackQuery):
                     size = os.path.getsize(output_file) if os.path.exists(output_file) else 0
                     await metrics.record_file_processed(callback.from_user.id, size)
                 except Exception as e:
-                    logging.error(f"Failed to record metrics for user {callback.from_user.id} on copy {i+1}: {e}")
+                    logging.error(f"Failed to record metrics for user {callback.from_user.id} on copy {i + 1}: {e}")
 
                 # Получаем presigned URL
                 url = s3_client.generate_presigned_url(
@@ -729,8 +778,8 @@ async def process_copies(callback: CallbackQuery):
                 download_links.append(url)
 
             except Exception as e:
-                logging.error(f"Error in copy { i +1}: {e}")
-                await callback.message.answer(f"❌ Error creating copy { i +1}: {e}")
+                logging.error(f"Error in copy {i + 1}: {e}")
+                await callback.message.answer(f"❌ Error creating copy {i + 1}: {e}")
 
         logging.info(f"Created {len(download_links)} links")
 
@@ -866,7 +915,22 @@ async def process_copies(callback: CallbackQuery):
         )
         logging.info(f"Page URL: {page_url[:50]}...")
 
-        await callback.message.answer(f"✅ Your copies are ready! View and download them here: {page_url}")
+        # Получаем актуальную информацию о пользователе для отображения остатка
+        try:
+            user_data = await get_user(callback.from_user.id, name, telegram_id, username)
+            files_used = user_data.get('files_today', 0)
+            is_premium = user_data.get('is_premium', False)
+
+            if is_premium:
+                status_msg = "✅ Your copies are ready!\n\n🔗 View and download: {url}\n\n⭐ Premium: Unlimited copies"
+            else:
+                remaining = max(0, FREE_DAILY_LIMIT - files_used)
+                status_msg = f"✅ Your copies are ready!\n\n🔗 View and download: {{url}}\n\n📊 Files used today: {files_used}/{FREE_DAILY_LIMIT}\n📦 Remaining: {remaining}"
+
+            await callback.message.answer(status_msg.format(url=page_url))
+        except Exception as e:
+            logging.error(f"Failed to get user stats: {e}")
+            await callback.message.answer(f"✅ Your copies are ready! View and download them here: {page_url}")
 
     except Exception as e:
         logging.error(f"Error in process_copies: {e}")

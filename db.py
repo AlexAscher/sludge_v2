@@ -1,5 +1,5 @@
 from pocketbase import PocketBase
-from config import PB_URL, PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD, RESET_MODE
+from config import PB_URL, PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD, RESET_MODE, FREE_DAILY_LIMIT
 from datetime import date, datetime, timezone
 import time
 import json
@@ -196,7 +196,7 @@ async def get_user(user_id: int, name: str = None, telegram_id: str = None, user
 
 
 async def increment_files(user_id: int, amount: int = 1, name: str = None, telegram_id: str = None,
-                          username: str = None):
+                          username: str = None, enforce_limit: bool = False):
     """
     Robustly increment files_today and total for a user.
     This directly queries the users collection by user_id and updates the record,
@@ -214,6 +214,7 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
             # чтобы избежать состояния, когда обновление перезаписывает неправильное значение.
             max_attempts = 3
             for attempt in range(1, max_attempts + 1):
+                # ВАЖНО: каждый раз читаем актуальное значение из record (может быть обновлена в конце предыдущей итерации)
                 current_files = int(getattr(record, 'files_today', 0) or 0)
                 current_total = int(getattr(record, 'total', 0) or 0)
                 last_reset_str = getattr(record, 'last_reset', None)
@@ -258,14 +259,29 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
                     should_reset = True
 
                 new_files = current_files + amount
+                # Enforce free-user limit if requested and user is not premium
+                is_premium = bool(getattr(record, 'is_premium', False))
+                if enforce_limit and not is_premium:
+                    try:
+                        limit = int(FREE_DAILY_LIMIT)
+                    except Exception:
+                        limit = 20
+                    if new_files > limit:
+                        print(f"[increment_files] would exceed limit for user {user_id}: current={current_files} amount={amount} limit={limit}")
+                        # Extra debug info: show parsed last_reset and is_premium
+                        try:
+                            print(f"[increment_files] DEBUG user={user_id} is_premium={is_premium} last_reset_str={last_reset_str} marker={marker}")
+                        except Exception:
+                            pass
+                        # Do not perform update; signal caller that limit was exceeded
+                        return False
                 new_total = current_total + amount
                 update_payload = {
                     'files_today': new_files,
-                    'total': new_total
+                    'total': new_total,
+                    # ВАЖНО: ВСЕГДА обновляем last_reset, чтобы следующий increment не считал что нужен сброс
+                    'last_reset': (marker.isoformat() if isinstance(marker, datetime) else str(marker))
                 }
-                # Обновляем last_reset только при сбросе
-                if should_reset:
-                    update_payload['last_reset'] = (marker.isoformat() if isinstance(marker, datetime) else str(marker))
                 if username:
                     update_payload['username'] = username
                 if name:
@@ -273,12 +289,9 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
                 print(f"[increment_files] attempt={attempt} update_payload={update_payload}")
                 try:
                     pb.collection('users').update(record.id, update_payload)
-                    # If we're writing last_reset but PB schema doesn't persist it,
-                    # also persist in the local fallback store so subsequent increments
-                    # can consult it.
+                    # ВСЕГДА сохраняем last_reset в fallback для последовательности инкрементов
                     try:
-                        if 'last_reset' in update_payload and update_payload['last_reset']:
-                            _set_last_reset_fallback(user_id, update_payload['last_reset'])
+                        _set_last_reset_fallback(user_id, update_payload['last_reset'])
                     except Exception as e:
                         print(f"[increment_files] failed to write fallback last_reset after update for {user_id}: {e}")
                 except Exception as e:
@@ -296,19 +309,26 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
                     time.sleep(0.05)
                     record = pb.collection('users').get_one(record.id)
                     verified_files = int(getattr(record, 'files_today', 0) or 0)
+                    # Проверяем СТРОГОЕ равенство - если значение отличается, значит произошла race condition
+                    # и нужно повторить операцию с актуальным значением из базы
                     if verified_files == new_files:
-                        print(f"[increment_files] Success on attempt={attempt}: files_today={verified_files}")
-                        return
+                        print(f"[increment_files] Success on attempt={attempt}: files_today={verified_files} (expected {new_files})")
+                        return True
                     else:
-                        print(f"[increment_files] Mismatch after update on attempt={attempt}: verified_files={verified_files} expected={new_files}, retrying")
-                        # попробуем ещё раз: прочитаем свежую запись
+                        print(f"[increment_files] Mismatch after update on attempt={attempt}: verified_files={verified_files} expected={new_files}, retrying with fresh data")
+                        # record уже обновлена свежими данными выше, следующая итерация будет использовать актуальное значение
                         continue
                 except Exception as e:
                     print(f"[increment_files] Failed to verify update on attempt={attempt}: {e}")
+                    # При ошибке проверки тоже попробуем прочитать свежую запись
+                    try:
+                        record = pb.collection('users').get_one(record.id)
+                    except Exception:
+                        pass
                     continue
             # Если все попытки не удались — логируем и выходим
             print(f"[increment_files] All attempts failed for user {user_id}. Last known current_files={getattr(record, 'files_today', None)}")
-            return
+            return False
         else:
             # Create new user with initial counts
             marker = get_current_reset_marker()
@@ -331,29 +351,38 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
                 _set_last_reset_fallback(user_id, marker_iso)
             except Exception as e:
                 print(f"Failed to write last_reset fallback for created user {user_id}: {e}")
-            return
+            # New user created and counts set
+            return True
     except Exception as e:
         print(f"Failed to increment files for user {user_id}: {e}")
-        # As a fallback, try using get_user behavior
+        # FALLBACK НЕ ДОЛЖЕН использовать get_user, так как это создаёт race condition
+        # Вместо этого создаём пользователя, если его нет
         try:
-            user_data = await get_user(user_id, name, telegram_id, username)
-            record_id = user_data['record_id']
-            # user_data уже учитывает возможный сброс, поэтому просто прибавляем
-            new_files = user_data['files_today'] + amount
-            new_total = int(user_data.get('total', 0)) + amount
-            update_payload = {
-                'files_today': new_files,
-                'total': new_total
+            # Попробуем создать нового пользователя (если его вообще нет)
+            marker = get_current_reset_marker()
+            create_payload = {
+                'user_id': user_id,
+                'name': name or 'Unknown',
+                'is_premium': False,
+                'files_today': amount,
+                'total': amount,
+                'last_reset': (marker.isoformat() if isinstance(marker, datetime) else str(marker)),
+                'premium_end': None,
+                'expiry_notified': False,
+                'username': username or ''
             }
-            # НЕ обновляем last_reset в fallback, так как get_user уже мог его обновить
-            if username:
-                update_payload['username'] = username
-            if name:
-                update_payload['name'] = name
-            pb.collection('users').update(record_id, update_payload)
-            print(f"(fallback) Updated user {user_id} files_today to {new_files} and total to {new_total}")
+            record = pb.collection('users').create(create_payload)
+            print(f"(fallback) Created user {user_id} with files_today={amount} total={amount}")
+            # Persist last_reset to local fallback store
+            try:
+                marker_iso = (marker.isoformat() if isinstance(marker, datetime) else str(marker))
+                _set_last_reset_fallback(user_id, marker_iso)
+            except Exception as e3:
+                print(f"(fallback) Failed to write last_reset fallback: {e3}")
+            return True
         except Exception as e2:
             print(f"Fallback increment also failed for {user_id}: {e2}")
+            return False
 
 
 async def reset_user_files(user_id: int):

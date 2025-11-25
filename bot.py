@@ -3,7 +3,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import BOT_TOKEN, CRYPTOBOT_TOKEN
+from config import BOT_TOKEN, CRYPTOBOT_TOKEN, FREE_DAILY_LIMIT
 from handlers import start, help, process, stats
 from db import get_user, increment_files, set_premium, init_db, get_expired_users, pb
 from aiosend import CryptoPay, TESTNET
@@ -16,21 +16,26 @@ from services import metrics
 logging.basicConfig(level=logging.INFO)
 
 # Глобальные переменные для платежей
-pending_payments = {}  # user_id: invoice_id
+pending_payments = {}  # invoice_id -> { user_id, duration, plan }
 
 
 async def check_payments(bot: Bot, cryptopay: CryptoPay):
     """Проверяет статус платежей и обновляет премиум"""
-    for user_id, invoice_id in list(pending_payments.items()):
+    # pending_payments now keyed by invoice_id -> payload
+    for invoice_id, payload in list(pending_payments.items()):
         try:
             invoice = await cryptopay.get_invoice(invoice_id)
             if invoice.status == 'paid':
-                await set_premium(user_id, True, 30)  # 30 seconds premium
+                user_id = payload.get('user_id')
+                duration = payload.get('duration', 30)
+                plan = payload.get('plan', 'unknown')
+                await set_premium(user_id, True, duration)
                 await metrics.record_premium_purchase(user_id)
-                await bot.send_message(user_id, "✅ Payment received! You now have unlimited access for 30 seconds.")
-                del pending_payments[user_id]
+                await bot.send_message(user_id, f"✅ Payment received! You now have premium ({plan})")
+                # remove by invoice_id
+                del pending_payments[invoice_id]
         except Exception as e:
-            logging.error(f"Error checking payment for {user_id}: {e}")
+            logging.error(f"Error checking payment for invoice {invoice_id}: {e}")
 
 
 async def check_expired_premiums(bot: Bot):
@@ -59,24 +64,7 @@ async def check_expired_premiums(bot: Bot):
 async def limit_middleware(handler, event, data):
     """Middleware для проверки лимита файлов"""
     logging.info(f"Middleware: received message from {event.from_user.id}: '{event.text}'")
-    if isinstance(event, types.Message) and event.text and not event.text.startswith('/'):
-        user_id = event.from_user.id
-        name = event.from_user.first_name or "Unknown"
-        telegram_id = event.from_user.id
-        username = getattr(event.from_user, 'username', '') or ''
-        user_data = await get_user(user_id, name, telegram_id, username)
-
-        if not user_data['is_premium']:
-            if user_data['files_today'] >= 20:
-                await event.answer(
-                    "❌ You reached the limit of 20 copies per day. Pay 0.05 USDT for unlimited access for 30 seconds: /pay")
-                return
-            else:
-                remaining = 20 - user_data['files_today']
-                if remaining in [20, 15, 10, 5, 3, 2, 1]:
-                    await event.answer(
-                        f"ℹ️ You have {remaining} copies left today. For unlimited access for 30 seconds, pay 0.05 USDT: /pay")
-
+    # Limit checking is now handled in individual handlers (process.py)
     return await handler(event, data)
 
 
@@ -84,17 +72,18 @@ async def pay_command(cryptopay: CryptoPay, message: types.Message):
     """Команда /pay для создания инвойса"""
     user_id = message.from_user.id
 
-    # Создаем инвойс на 0.05 USDT
+    # Создаем инвойс на 0.05 USDT (temporary unlimited for 30 seconds)
     invoice = await cryptopay.create_invoice(
         amount=0.05,
         asset='USDT',
-        description='Subscription for unlimited access to the bot'
+        description='Temporary unlimited access (30 seconds)'
     )
 
-    pending_payments[user_id] = invoice.invoice_id
+    # Store payload keyed by invoice_id so check_payments can grant correct duration
+    pending_payments[invoice.invoice_id] = {'user_id': user_id, 'duration': 30, 'plan': 'temporary'}
 
     # Send payment link
-    text = f"💳 Pay 0.05 USDT for unlimited access for 30 seconds.\n\n{invoice.pay_url}\n\nYour status will be updated automatically after payment."
+    text = f"💳 Pay 0.05 USDT for temporary unlimited access (30 seconds).\n\n{invoice.pay_url}\n\nYour status will be updated automatically after payment."
     await message.answer(text)
 
 
@@ -103,16 +92,16 @@ async def callback_handler(cryptopay: CryptoPay, callback: types.CallbackQuery):
     user_id = callback.from_user.id
     if callback.data == "renew_yes":
         try:
-            # Создаем инвойс прямо при клике на "Да"
+            # Создаем инвойс прямо при клике на "Да" (temporary unlimited)
             invoice = await cryptopay.create_invoice(
                 amount=0.05,
                 asset='USDT',
-                description='Subscription for unlimited access to the bot'
+                description='Temporary unlimited access (30 seconds)'
             )
-            pending_payments[user_id] = invoice.invoice_id
+            pending_payments[invoice.invoice_id] = {'user_id': user_id, 'duration': 30, 'plan': 'temporary'}
 
             # Отправляем платежную ссылку
-            text = f"💳 Pay 0.05 USDT for unlimited access for 30 seconds.\n\n{invoice.pay_url}\n\nYour status will be updated automatically after payment."
+            text = f"💳 Pay 0.05 USDT for temporary unlimited access (30 seconds).\n\n{invoice.pay_url}\n\nYour status will be updated automatically after payment."
             await callback.message.edit_text(text)
         except Exception as e:
             logging.error(f"Error creating invoice for {user_id}: {e}")
@@ -134,6 +123,48 @@ async def callback_handler(cryptopay: CryptoPay, callback: types.CallbackQuery):
         await callback.message.bot.send_message(user_id, main_text)
     else:
         await callback.message.edit_reply_markup(reply_markup=None)
+
+
+async def subscribe_callback(cryptopay: CryptoPay, callback: types.CallbackQuery):
+    """Callback handler for subscription buttons (monthly/yearly).
+
+    Creates an invoice and sends the payment link to the user.
+    """
+    try:
+        data = callback.data or ''
+        parts = data.split('|')
+        if len(parts) < 2:
+            await callback.answer("Invalid subscription request", show_alert=True)
+            return
+        plan = parts[1]
+        if plan == 'monthly':
+            amount = 0.05
+            # monthly = 30 days
+            duration = 30 * 24 * 3600
+            description = 'Monthly subscription (30 days) for SludgeAI'
+            plan_label = 'monthly'
+        elif plan == 'yearly':
+            amount = 0.5
+            # For testing: make yearly actually 1 minute
+            duration = 60
+            description = 'Yearly subscription (12 months, 4 months free) for SludgeAI'
+            plan_label = 'yearly'
+        else:
+            await callback.answer("Unknown plan", show_alert=True)
+            return
+
+        invoice = await cryptopay.create_invoice(
+            amount=amount,
+            asset='USDT',
+            description=description
+        )
+        pending_payments[invoice.invoice_id] = {'user_id': callback.from_user.id, 'duration': duration, 'plan': plan_label}
+
+        text = f"💳 Подписка: {description}\nСумма: {amount} USDT\n\nОплатите по ссылке: {invoice.pay_url}\n\nВаш статус обновится автоматически после оплаты."
+        await callback.message.answer(text)
+    except Exception as e:
+        logging.error(f"Error creating subscription invoice for {callback.from_user.id}: {e}")
+        await callback.answer("Ошибка создания инвойса. Попробуйте позже.", show_alert=True)
 
 
 async def main():
@@ -166,6 +197,9 @@ async def main():
     # Обработчик callback
     dp.callback_query.register(functools.partial(callback_handler, cryptopay),
                                lambda c: c.data in ["renew_yes", "renew_no"])
+    # Subscription buttons (monthly/yearly)
+    dp.callback_query.register(functools.partial(subscribe_callback, cryptopay),
+                               lambda c: c.data and str(c.data).startswith("subscribe|"))
 
     # Планировщик для проверки платежей каждые 30 секунд
     scheduler = AsyncIOScheduler()
