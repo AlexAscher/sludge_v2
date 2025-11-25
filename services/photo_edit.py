@@ -104,6 +104,15 @@ def randomize_exif(input_file: str, output_file: str = None) -> str:
 
     logging.info(
         f"Applied effects: brightness={brightness_factor:.2f}, contrast={contrast_factor:.2f}, color={color_factor:.2f}, noise_strength={noise_strength:.4f}")
+
+    # Замена одного случайного пикселя для уникальности pHash
+    width, height = img.size
+    px = random.randint(0, width - 1)
+    py = random.randint(0, height - 1)
+    new_color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+    img.putpixel((px, py), new_color)
+    logging.info(f"Replaced pixel at ({px}, {py}) with color {new_color}")
+
     img.convert('RGB').save(output_file, format='JPEG', exif=exif_bytes, quality=95)
     return output_file
 
