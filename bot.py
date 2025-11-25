@@ -1,9 +1,11 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import BOT_TOKEN, CRYPTOBOT_TOKEN, FREE_DAILY_LIMIT
+import aiohttp
 from handlers import start, help, process, stats
 from db import get_user, increment_files, set_premium, init_db, get_expired_users, pb
 from aiosend import CryptoPay, TESTNET
@@ -221,7 +223,7 @@ async def main():
         logging.error(f"Failed to set bot commands: {e}")
     logging.info("Starting polling...")
     try:
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, handle_signals=False, timeout=60, request_timeout=300)
     finally:
         scheduler.shutdown()
 
