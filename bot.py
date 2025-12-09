@@ -162,11 +162,11 @@ async def subscribe_callback(cryptopay: CryptoPay, callback: types.CallbackQuery
         )
         pending_payments[invoice.invoice_id] = {'user_id': callback.from_user.id, 'duration': duration, 'plan': plan_label}
 
-        text = f"💳 Подписка: {description}\nСумма: {amount} USDT\n\nОплатите по ссылке: {invoice.pay_url}\n\nВаш статус обновится автоматически после оплаты."
+        text = f"💳 Subscription: {description}\nAmount: {amount} USDT\n\nPay via this link: {invoice.pay_url}\n\nYour status will be updated automatically after payment."
         await callback.message.answer(text)
     except Exception as e:
         logging.error(f"Error creating subscription invoice for {callback.from_user.id}: {e}")
-        await callback.answer("Ошибка создания инвойса. Попробуйте позже.", show_alert=True)
+        await callback.answer("Error creating invoice. Please try again later.", show_alert=True)
 
 
 async def main():

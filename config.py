@@ -36,3 +36,6 @@ RESET_MODE = os.getenv("RESET_MODE", "daily")
 
 # Free daily copies limit for non-premium users (can be overridden via env)
 FREE_DAILY_LIMIT = int(os.getenv('FREE_DAILY_LIMIT', '100'))
+
+# Uploader URL
+UPLOADER_URL = os.getenv("UPLOADER_URL", "http://46.101.157.179/")
