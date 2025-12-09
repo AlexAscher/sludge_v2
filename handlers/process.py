@@ -480,6 +480,10 @@ async def handle_unsupported(message: Message):
 # Обработка выбора количества копий
 @router.callback_query(F.data.startswith("copies|"))
 async def process_copies(callback: CallbackQuery):
+    """Queue manager for processing copies - adds task to queue"""
+    from services.queue import processing_queue
+    from config import MAX_COPIES_PER_REQUEST
+
     cleanup_old_files()  # Очищаем старые файлы
 
     parts = callback.data.split("|")
@@ -488,10 +492,33 @@ async def process_copies(callback: CallbackQuery):
         return
     _, count_str, file_uuid, media_type = parts
     count = int(count_str)
-    if count < 1 or count > 120:
+
+    # Check max copies limit
+    if count > MAX_COPIES_PER_REQUEST:
+        await callback.answer(f"❌ Maximum {MAX_COPIES_PER_REQUEST} copies allowed per request", show_alert=True)
+        return
+
+    if count < 1:
         await callback.answer("Invalid count", show_alert=True)
         return
 
+    filepath = file_cache.get(file_uuid)
+    if not filepath:
+        await callback.answer("File not found", show_alert=True)
+        return
+
+    # Add to queue
+    user_id = callback.from_user.id
+    success, message = await processing_queue.add_task(user_id, callback, count, file_uuid, media_type)
+
+    if not success:
+        await callback.answer(message, show_alert=True)
+    else:
+        await callback.message.answer(f"📋 {message}")
+
+
+async def process_copies_internal(callback: CallbackQuery, count: int, file_uuid: str, media_type: str):
+    """Internal function that actually processes the copies"""
     filepath = file_cache.get(file_uuid)
     if not filepath:
         await callback.answer("File not found", show_alert=True)
