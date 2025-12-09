@@ -6,6 +6,7 @@
 """
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import boto3
 import os
 from dotenv import load_dotenv
@@ -15,6 +16,7 @@ import config  # Импорт config.py
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app)  # Включаем CORS для всех роутов
 
 # Настройки из config.py
 S3_BUCKET_NAME = config.S3_BUCKET_NAME

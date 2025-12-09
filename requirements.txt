@@ -10,6 +10,8 @@ python-dotenv==1.0.1  # хранение токенов в .env
 aiofiles==23.2.1      # асинхронная работа с файлами
 #pip install hf_xet
 boto3==1.34.0         # AWS S3 для cloud storage
+flask==3.0.0          # для upload endpoint
+flask-cors==4.0.0     # для CORS в upload endpoint
 numpy==1.26.4         # для обработки изображений (шум)
 piexif==1.1.3         # для EXIF метаданных
 aiosend==3.0.2        # для оплаты через CryptoBot
