@@ -1,19 +1,50 @@
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
-from config import UPLOADER_URL
+from db import get_user
+from config import FREE_DAILY_LIMIT
 
 router = Router()
 
+
 @router.message(Command("start"))
 async def cmd_start(message: Message):
-    await message.answer(
-        "Welcome to @SludgeAI 🚀\n\n"
-        "Create truly unique videos and images that algorithms won't flag as duplicates! Sludge AI automatically modifies your media files—altering metadata, applying subtle randomized visual changes, and ensuring every clip or image stands out as one-of-a-kind.\n\n"
-        "The result? Greater reach and a better chance of landing on the FYP and in recommendations!\n\n"
-        "Get started now: upload a video or photo from your gallery ⬇️\n\n"
-        f"📁 For files larger than 20MB, use our uploader: {UPLOADER_URL}\n"
-        "After uploading, send me the link you receive!\n\n"
-        "👀 See real reviews and examples in @sludgevouches!\n\n"
-        "Your content—your voice. Make it seen 🚀"
-    )
+    user_id = message.from_user.id
+    name = message.from_user.first_name or "Unknown"
+    telegram_id = str(message.from_user.id)
+    username = message.from_user.username
+
+    try:
+        user_data = await get_user(user_id, name, telegram_id, username)
+        is_premium = user_data.get('is_premium', False)
+        files_used = user_data.get('files_today', 0)
+
+        welcome_text = (
+            "Welcome to FYP Repurpose 🥷\n\n"
+            "Create undetectable, algorithm-proof copies of your photos and videos — so your content never gets flagged as duplicate.\n\n"
+            "We automatically modify metadata and apply invisible, unique tweaks to every file. The result? Higher reach, more views, and better chances to hit the FYP!\n\n"
+            "✅ See real examples and proof: @fypvouches\n"
+            "✅ Just send a photo or video to get started!\n\n"
+        )
+
+        if is_premium:
+            welcome_text += "⭐ Premium: Unlimited copies\n\n"
+        else:
+            welcome_text += f"📊 Free today: {files_used}/{FREE_DAILY_LIMIT} used\n"
+            welcome_text += "✨ Want unlimited? Type /pay\n\n"
+
+        welcome_text += "Your content. Your voice. Finally seen. 🚀"
+
+        await message.answer(welcome_text)
+    except Exception as e:
+        # Fallback если не удалось получить данные пользователя
+        await message.answer(
+            "Welcome to FYP Repurpose 🥷\n\n"
+            "Create undetectable, algorithm-proof copies of your photos and videos — so your content never gets flagged as duplicate.\n\n"
+            "We automatically modify metadata and apply invisible, unique tweaks to every file. The result? Higher reach, more views, and better chances to hit the FYP!\n\n"
+            "✅ See real examples and proof: @fypvouches\n"
+            "✅ Just send a photo or video to get started!\n\n"
+            "📊 Free today: 0/100 used\n"
+            "✨ Want unlimited? Type /pay\n\n"
+            "Your content. Your voice. Finally seen. 🚀"
+        )

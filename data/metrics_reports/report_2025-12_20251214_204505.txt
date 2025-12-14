@@ -1,0 +1,23 @@
+Monthly report for 2025-12
+
+Per-day details:
+
+2025-12-09: files=19, 0.0019 GB, premium_purchased=0
+Active users:
+  Alexey (6095619097): free, files=19, Memory=0.0019 GB, username=Alexey
+
+2025-12-10: files=10, 0.003 GB, premium_purchased=0
+Active users:
+  Alexey (6095619097): free, files=10, Memory=0.003 GB, username=Alexey
+
+
+Summary:
+
+Files this month: 29
+Bytes this month: 0.0049 GB
+Premium purchased this month: 0
+Files all time: 878
+Total bytes all time: 0.2016 GB
+Storage cumulative (tracked uploads): 0.2016 GB
+Total users (approx): 2
+Paid users (approx): 0
