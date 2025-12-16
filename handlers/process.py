@@ -6,8 +6,6 @@ from aiogram.types import Message, CallbackQuery
 ## download_video больше не используется
 from services.video_edit import randomize_metadata
 from services.photo_edit import randomize_exif
-from services.watermark import add_watermark_image, add_watermark_video, add_image_watermark_image, \
-    add_image_watermark_video, WATERMARK_POSITIONS
 import mimetypes
 import aiohttp
 import os
@@ -31,9 +29,6 @@ user_files = defaultdict(list)  # {user_id: [file_paths]}
 
 # Отслеживание последнего файла каждого пользователя: {user_id: {'file_uuid': uuid, 'file_path': path}}
 user_last_file = {}
-
-# Состояние для Watermark: {user_id: {'file_path': path, 'file_type': 'photo/video', 'step': 'choosing_type', 'watermark_type': 'text/image'}}
-watermark_state = defaultdict(dict)
 
 
 def cleanup_old_files():
@@ -130,11 +125,6 @@ async def handle_photo(message: Message):
 
     user_id = message.from_user.id
 
-    # Проверяем, ожидаем ли мы изображение для водяного знака
-    if user_id in watermark_state and watermark_state[user_id]['step'] == 'waiting_image':
-        await handle_watermark_image(message)
-        return
-
     # Удаляем предыдущий файл пользователя, если он есть
     if user_id in user_last_file:
         old_file_uuid = user_last_file[user_id].get('file_uuid')
@@ -194,9 +184,6 @@ async def handle_photo(message: Message):
         ],
         [
             types.InlineKeyboardButton(text="120", callback_data=f"copies|120|{file_uuid}|photo"),
-        ],
-        [
-            types.InlineKeyboardButton(text="💧 Add Watermark", callback_data=f"watermark|{file_uuid}|photo"),
         ],
         # Subscription buttons stacked full-width
         [
@@ -303,9 +290,6 @@ async def handle_video(message: Message):
         [
             types.InlineKeyboardButton(text="120", callback_data=f"copies|120|{file_uuid}|video"),
         ],
-        [
-            types.InlineKeyboardButton(text="💧 Add Watermark", callback_data=f"watermark|{file_uuid}|video"),
-        ],
         # Subscription buttons stacked full-width
         [
             types.InlineKeyboardButton(text="Ежемесячная подписка", callback_data=f"subscribe|monthly"),
@@ -317,342 +301,155 @@ async def handle_video(message: Message):
     await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
 
 
-# Watermark handlers
-@router.callback_query(F.data.startswith("watermark|"))
-async def start_watermark(callback: CallbackQuery):
-    """Начало процесса добавления водяного знака"""
-    try:
-        parts = callback.data.split("|")
-        if len(parts) != 3:
-            await callback.answer("Invalid data", show_alert=True)
-            return
+@router.message(F.document)
+async def handle_document(message: Message):
+    """Обработка файлов, отправленных как документы"""
+    cleanup_old_files()
 
-        _, file_uuid, file_type = parts
-        filepath = file_cache.get(file_uuid)
-        if not filepath:
-            await callback.answer("File not found", show_alert=True)
-            return
+    document = message.document
+    file_size_mb = document.file_size / (1024 * 1024) if document.file_size else 0
+    mime_type = document.mime_type or ''
 
-        user_id = callback.from_user.id
-        watermark_state[user_id] = {
-            'file_path': filepath,
-            'file_type': file_type,
-            'file_uuid': file_uuid,
-            'step': 'choosing_type'
-        }
+    # Проверяем, является ли файл фото или видео
+    is_image = mime_type.startswith('image/')
+    is_video = mime_type.startswith('video/')
 
-        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-            [
-                types.InlineKeyboardButton(text="📝 Text Watermark", callback_data="watermark_type|text"),
-                types.InlineKeyboardButton(text="🖼️ Image Watermark", callback_data="watermark_type|image")
-            ],
-            [types.InlineKeyboardButton(text="❌ Cancel", callback_data="cancel_watermark")]
-        ])
-
-        await callback.message.edit_text(
-            "💧 Watermark Mode\n\n"
-            "Choose the type of watermark you want to add:",
-            reply_markup=keyboard
-        )
-
-    except Exception as e:
-        logging.error(f"Watermark start error: {e}")
-        await callback.answer("Error starting watermark process", show_alert=True)
-
-
-@router.callback_query(F.data.startswith("watermark_type|"))
-async def choose_watermark_type(callback: CallbackQuery):
-    """Выбор типа водяного знака"""
-    try:
-        parts = callback.data.split("|")
-        if len(parts) != 2:
-            await callback.answer("Invalid data", show_alert=True)
-            return
-
-        _, watermark_type = parts
-        user_id = callback.from_user.id
-
-        if user_id not in watermark_state:
-            await callback.answer("Session expired", show_alert=True)
-            return
-
-        watermark_state[user_id]['watermark_type'] = watermark_type
-
-        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="❌ Cancel", callback_data="cancel_watermark")]
-        ])
-
-        if watermark_type == 'text':
-            watermark_state[user_id]['step'] = 'waiting_text'
-            await callback.message.edit_text(
-                "📝 Text Watermark\n\n"
-                "Send me the text you want to use as a watermark.\n"
-                "Example: @YourChannel, Your Name, etc.\n\n"
-                "📏 Maximum 50 characters",
-                reply_markup=keyboard
-            )
-        elif watermark_type == 'image':
-            watermark_state[user_id]['step'] = 'waiting_image'
-            await callback.message.edit_text(
-                "🖼️ Image Watermark\n\n"
-                "Send me an image to use as a watermark.\n"
-                "Best formats: PNG with transparent background\n\n"
-                "💡 Tip: Use your logo or signature image",
-                reply_markup=keyboard
-            )
-
-    except Exception as e:
-        logging.error(f"Watermark type selection error: {e}")
-        await callback.answer("Error selecting watermark type", show_alert=True)
-
-
-@router.callback_query(F.data == "cancel_watermark")
-async def cancel_watermark(callback: CallbackQuery):
-    """Отмена добавления водяного знака"""
-    user_id = callback.from_user.id
-
-    # Очищаем состояние и временные файлы
-    if user_id in watermark_state:
-        state = watermark_state[user_id]
-        # Удаляем временный файл водяного знака если есть
-        if 'watermark_image_path' in state and os.path.exists(state['watermark_image_path']):
-            os.remove(state['watermark_image_path'])
-
-        del watermark_state[user_id]
-
-    await callback.message.edit_text(
-        "❌ Watermark cancelled.\n\n"
-        "Send me a photo or video to get started."
-    )
-
-
-@router.callback_query(F.data.startswith("watermark_pos|"))
-async def choose_watermark_position(callback: CallbackQuery):
-    """Выбор позиции водяного знака"""
-    try:
-        parts = callback.data.split("|")
-        if len(parts) != 2:
-            await callback.answer("Invalid data", show_alert=True)
-            return
-
-        _, position = parts
-        user_id = callback.from_user.id
-
-        if user_id not in watermark_state:
-            await callback.answer("Session expired", show_alert=True)
-            return
-
-        state = watermark_state[user_id]
-        watermark_type = state.get('watermark_type', 'text')
-        file_path = state['file_path']
-        file_type = state['file_type']
-
-        await callback.message.edit_text("🔄 Adding watermark... Please wait.")
-
-        try:
-            # Добавляем водяной знак в зависимости от типа
-            if watermark_type == 'text':
-                text = state['watermark_text']
-                if file_type == 'photo':
-                    result_path = add_watermark_image(file_path, text, position)
-                else:  # video
-                    result_path = add_watermark_video(file_path, text, position)
-            else:  # image watermark
-                watermark_image_path = state['watermark_image_path']
-                if file_type == 'photo':
-                    result_path = add_image_watermark_image(file_path, watermark_image_path, position)
-                else:  # video
-                    result_path = add_image_watermark_video(file_path, watermark_image_path, position)
-
-            # Загружаем результат в S3 — сохраняем реальное расширение и ContentType
-            import mimetypes as _mimetypes
-            session_id = str(uuid.uuid4())
-            # используем расширение из result_path, если оно есть
-            ext = os.path.splitext(result_path)[1].lstrip('.') or ('mp4' if file_type == 'video' else 'jpg')
-            random_name = f"watermarked_{watermark_type}_{uuid.uuid4().hex}.{ext}"
-            key = f"{session_id}/{random_name}"
-
-            guessed_type = _mimetypes.guess_type(result_path)[0]
-            # безопасный fallback
-            if guessed_type is None:
-                if file_type == 'photo':
-                    guessed_type = 'image/png' if ext == 'png' else 'image/jpeg'
-                else:
-                    guessed_type = 'video/mp4'
-
-            s3_client.upload_file(result_path, S3_BUCKET_NAME, key,
-                                  ExtraArgs={'ContentType': guessed_type})
-
-            # Record metrics: count file and bytes uploaded
-            try:
-                size = os.path.getsize(result_path) if os.path.exists(result_path) else 0
-                await metrics.record_file_processed(callback.from_user.id, size)
-            except Exception as e:
-                logging.error(f"Failed to record metrics for user {callback.from_user.id}: {e}")
-
-            # Получаем presigned URL
-            url = s3_client.generate_presigned_url(
-                'get_object',
-                Params={'Bucket': S3_BUCKET_NAME, 'Key': key},
-                ExpiresIn=3600
-            )
-
-            # Отправляем результат
-            watermark_emoji = "📝" if watermark_type == 'text' else "🖼️"
-
-            if file_type == 'photo':
-                await callback.message.bot.send_photo(
-                    chat_id=callback.message.chat.id,
-                    photo=url,
-                    caption=f"✅ {watermark_emoji} Watermark added!\nDownload: {url}"
-                )
-            else:
-                await callback.message.answer(
-                    f"✅ {watermark_emoji} Video watermark completed!\n\n"
-                    f"Download: {url}\n\n"
-                    f"Link valid for 1 hour."
-                )
-
-            # Increment user counters: watermarking counts as one processed file
-            try:
-                name = callback.from_user.first_name or "Unknown"
-                telegram_id = str(callback.from_user.id)
-                username = getattr(callback.from_user, 'username', '') or ''
-                await increment_files(callback.from_user.id, 1, name, telegram_id, username)
-            except Exception as e:
-                logging.error(f"Failed to increment files for user {callback.from_user.id}: {e}")
-
-            # Очищаем временные файлы
-            try:
-                if os.path.exists(result_path):
-                    os.remove(result_path)
-            except Exception:
-                pass
-            if watermark_type == 'image' and 'watermark_image_path' in state:
-                if os.path.exists(state['watermark_image_path']):
-                    os.remove(state['watermark_image_path'])
-            # Удаляем оригинальный файл и кэш (если был сохранён)
-            try:
-                file_uuid = state.get('file_uuid')
-                orig_path = state.get('file_path')
-                if orig_path and os.path.exists(orig_path):
-                    try:
-                        os.remove(orig_path)
-                    except Exception:
-                        pass
-                if file_uuid and file_uuid in file_cache:
-                    try:
-                        del file_cache[file_uuid]
-                    except Exception:
-                        pass
-                if file_uuid and file_uuid in file_cache_times:
-                    try:
-                        del file_cache_times[file_uuid]
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            # Очищаем состояние
-            del watermark_state[user_id]
-
-        except Exception as e:
-            logging.error(f"Watermark processing error: {e}")
-            await callback.message.edit_text(f"❌ Watermark failed: {str(e)}")
-            # Очищаем временные файлы при ошибке
-            if watermark_type == 'image' and 'watermark_image_path' in state:
-                if os.path.exists(state['watermark_image_path']):
-                    try:
-                        os.remove(state['watermark_image_path'])
-                    except Exception:
-                        pass
-            # Удаляем оригинальный файл и кэш (если есть)
-            try:
-                file_uuid = state.get('file_uuid')
-                orig_path = state.get('file_path')
-                if orig_path and os.path.exists(orig_path):
-                    try:
-                        os.remove(orig_path)
-                    except Exception:
-                        pass
-                if file_uuid and file_uuid in file_cache:
-                    try:
-                        del file_cache[file_uuid]
-                    except Exception:
-                        pass
-                if file_uuid and file_uuid in file_cache_times:
-                    try:
-                        del file_cache_times[file_uuid]
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            del watermark_state[user_id]
-
-    except Exception as e:
-        logging.error(f"Watermark position error: {e}")
-        await callback.answer("Error processing watermark", show_alert=True)
-
-
-# Обработчик текстовых сообщений для watermark
-@router.message(F.text)
-async def handle_watermark_text(message: Message):
-    """Обработка текста для водяного знака"""
-    user_id = message.from_user.id
-
-    # Проверяем, ожидаем ли мы текст для водяного знака
-    if user_id in watermark_state and watermark_state[user_id]['step'] == 'waiting_text':
-        text = message.text.strip()
-
-        if len(text) > 50:
-            await message.answer("❌ Text too long. Please use up to 50 characters.")
-            return
-
-        if len(text) < 1:
-            await message.answer("❌ Please enter some text.")
-            return
-
-        # Сохраняем текст и переходим к выбору позиции
-        watermark_state[user_id]['watermark_text'] = text
-        watermark_state[user_id]['step'] = 'choosing_position'
-
-        # Создаем клавиатуру с позициями
-        keyboard_rows = []
-        positions = list(WATERMARK_POSITIONS.items())
-
-        # Группируем по 3 кнопки в ряд
-        for i in range(0, len(positions), 3):
-            row = []
-            for j in range(3):
-                if i + j < len(positions):
-                    pos_key, pos_name = positions[i + j]
-                    row.append(types.InlineKeyboardButton(
-                        text=pos_name,
-                        callback_data=f"watermark_pos|{pos_key}"
-                    ))
-            keyboard_rows.append(row)
-
-        # Добавляем кнопку отмены
-        keyboard_rows.append([
-            types.InlineKeyboardButton(text="❌ Cancel", callback_data="cancel_watermark")
-        ])
-
-        keyboard = types.InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
-
+    if not is_image and not is_video:
         await message.answer(
-            f"✅ Text watermark: \"{text}\"\n\n"
-            f"Now choose the position for your watermark:",
-            reply_markup=keyboard
+            "❌ Please send only photos or videos.\n\n"
+            "Supported formats:\n"
+            "📷 Images: JPG, PNG, WEBP\n"
+            "🎥 Videos: MP4, MOV, AVI, WEBM"
         )
-
         return
 
-    # Если не в режиме watermark, показываем приветственное сообщение
-    # и статус использования для не-премиум пользователей
+    # Проверяем размер файла (Telegram Bot API лимит 20 МБ)
+    if document.file_size and document.file_size > 20 * 1024 * 1024:
+        await message.answer(
+            f"❌ File is too large ({file_size_mb:.1f} MB).\n\n"
+            f"Telegram Bot API limit: 20 MB\n\n"
+            f"Please send a smaller file or use our uploader: http://46.101.157.179/"
+        )
+        return
+
+    user_id = message.from_user.id
+
+    # Удаляем предыдущий файл пользователя, если он есть
+    if user_id in user_last_file:
+        old_file_uuid = user_last_file[user_id].get('file_uuid')
+        old_file_path = user_last_file[user_id].get('file_path')
+
+        if old_file_path and os.path.exists(old_file_path):
+            try:
+                os.remove(old_file_path)
+                logging.info(f"Removed old file for user {user_id}: {old_file_path}")
+            except Exception as e:
+                logging.error(f"Error removing old file: {e}")
+
+        if old_file_uuid and old_file_uuid in file_cache:
+            del file_cache[old_file_uuid]
+        if old_file_uuid and old_file_uuid in file_cache_times:
+            del file_cache_times[old_file_uuid]
+
+    file = await message.bot.get_file(document.file_id)
+    file_path = file.file_path
+
+    # Определяем расширение
+    ext = os.path.splitext(document.file_name)[1] if document.file_name else ''
+    if not ext:
+        if is_image:
+            if 'png' in mime_type:
+                ext = '.png'
+            elif 'webp' in mime_type:
+                ext = '.webp'
+            else:
+                ext = '.jpg'
+        else:
+            ext = '.mp4'
+
+    dest_path = os.path.join(TEMP_DIR, f"{document.file_id}{ext}")
+
+    # Показываем прогресс
+    media_type_text = "image" if is_image else "video"
+    progress_msg = await message.answer(f"⏳ Downloading {media_type_text} ({file_size_mb:.1f} MB)...")
+
+    # Скачиваем с обработкой таймаута
+    try:
+        await message.bot.download_file(file_path, dest_path)
+        await progress_msg.delete()
+    except TimeoutError:
+        await progress_msg.edit_text(
+            f"❌ Timeout while downloading {media_type_text} ({file_size_mb:.1f} MB).\n\n"
+            f"Please try a smaller file or check your connection."
+        )
+        return
+    except Exception as e:
+        logging.error(f"Error downloading document: {e}")
+        await progress_msg.edit_text(f"❌ Error downloading file: {e}")
+        return
+
+    # Ensure user record exists and username is stored
+    name = message.from_user.first_name or "Unknown"
+    username = message.from_user.username
+    await get_user(user_id, name, str(user_id), username)
+
+    # Сохраняем в кэш
+    file_uuid = str(uuid.uuid4())
+    file_cache[file_uuid] = dest_path
+    current_time = time.time()
+    file_cache_times[file_uuid] = current_time
+
+    # Сохраняем как последний файл пользователя
+    user_last_file[user_id] = {
+        'file_uuid': file_uuid,
+        'file_path': dest_path
+    }
+
+    # Определяем тип медиа для callback
+    media_type = 'photo' if is_image else 'video'
+
+    # Отправляем клавиатуру с выбором количества копий
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+        [
+            types.InlineKeyboardButton(text="5", callback_data=f"copies|5|{file_uuid}|{media_type}"),
+            types.InlineKeyboardButton(text="10", callback_data=f"copies|10|{file_uuid}|{media_type}"),
+            types.InlineKeyboardButton(text="20", callback_data=f"copies|20|{file_uuid}|{media_type}"),
+            types.InlineKeyboardButton(text="30", callback_data=f"copies|30|{file_uuid}|{media_type}"),
+        ],
+        [
+            types.InlineKeyboardButton(text="40", callback_data=f"copies|40|{file_uuid}|{media_type}"),
+            types.InlineKeyboardButton(text="50", callback_data=f"copies|50|{file_uuid}|{media_type}"),
+            types.InlineKeyboardButton(text="75", callback_data=f"copies|75|{file_uuid}|{media_type}"),
+            types.InlineKeyboardButton(text="100", callback_data=f"copies|100|{file_uuid}|{media_type}"),
+        ],
+        [
+            types.InlineKeyboardButton(text="120", callback_data=f"copies|120|{file_uuid}|{media_type}"),
+        ],
+        [
+            types.InlineKeyboardButton(text="Ежемесячная подписка", callback_data=f"subscribe|monthly"),
+        ],
+        [
+            types.InlineKeyboardButton(text="Годовая подписка (4 месяца бесплатно)", callback_data=f"subscribe|yearly"),
+        ]
+    ])
+    await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
+
+
+# Обработчик текстовых сообщений
+@router.message(F.text)
+async def handle_text(message: Message):
+    """Обработка текстовых сообщений - URL из uploader или приветственное сообщение"""
     user_id = message.from_user.id
     name = message.from_user.first_name or "Unknown"
     telegram_id = str(message.from_user.id)
     username = message.from_user.username
+
+    text = message.text.strip()
+
+    # Проверяем, является ли сообщение URL-ссылкой на Spaces
+    if "digitaloceanspaces.com" in text or text.startswith("http://") or text.startswith("https://"):
+        await handle_url_upload(message, text)
+        return
 
     try:
         user_data = await get_user(user_id, name, telegram_id, username)
@@ -685,60 +482,120 @@ async def handle_watermark_text(message: Message):
         )
 
 
-# Обработчик изображений для watermark
-async def handle_watermark_image(message: Message):
-    """Обработка изображения для водяного знака"""
+async def handle_url_upload(message: Message, url: str):
+    """Обработка URL-ссылки на файл из uploader"""
     user_id = message.from_user.id
 
-    # Проверяем, ожидаем ли мы изображение для водяного знака
-    if user_id in watermark_state and watermark_state[user_id]['step'] == 'waiting_image':
-        try:
-            photo = message.photo[-1]
-            file = await message.bot.get_file(photo.file_id)
-            file_path = file.file_path
+    # Удаляем предыдущий файл пользователя
+    if user_id in user_last_file:
+        old_file_uuid = user_last_file[user_id].get('file_uuid')
+        old_file_path = user_last_file[user_id].get('file_path')
 
-            # Сохраняем водяной знак
-            watermark_path = os.path.join(TEMP_DIR, f"watermark_{photo.file_id}.jpg")
-            await message.bot.download_file(file_path, watermark_path)
+        if old_file_path and os.path.exists(old_file_path):
+            try:
+                os.remove(old_file_path)
+                logging.info(f"Removed old file for user {user_id}: {old_file_path}")
+            except Exception as e:
+                logging.error(f"Error removing old file: {e}")
 
-            # Сохраняем путь к водяному знаку
-            watermark_state[user_id]['watermark_image_path'] = watermark_path
-            watermark_state[user_id]['step'] = 'choosing_position'
+        if old_file_uuid and old_file_uuid in file_cache:
+            del file_cache[old_file_uuid]
+        if old_file_uuid and old_file_uuid in file_cache_times:
+            del file_cache_times[old_file_uuid]
 
-            # Создаем клавиатуру с позициями
-            keyboard_rows = []
-            positions = list(WATERMARK_POSITIONS.items())
+    progress_msg = await message.answer("⏳ Downloading file from URL...")
 
-            # Группируем по 3 кнопки в ряд
-            for i in range(0, len(positions), 3):
-                row = []
-                for j in range(3):
-                    if i + j < len(positions):
-                        pos_key, pos_name = positions[i + j]
-                        row.append(types.InlineKeyboardButton(
-                            text=pos_name,
-                            callback_data=f"watermark_pos|{pos_key}"
-                        ))
-                keyboard_rows.append(row)
+    try:
+        # Скачиваем файл по URL
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    await progress_msg.edit_text(f"❌ Failed to download file. HTTP {response.status}")
+                    return
 
-            # Добавляем кнопку отмены
-            keyboard_rows.append([
-                types.InlineKeyboardButton(text="❌ Cancel", callback_data="cancel_watermark")
-            ])
+                # Определяем расширение из Content-Type или URL
+                content_type = response.headers.get('Content-Type', '')
+                if 'video' in content_type:
+                    ext = '.mp4'
+                    media_type = 'video'
+                elif 'image' in content_type:
+                    if 'png' in content_type:
+                        ext = '.png'
+                    elif 'webp' in content_type:
+                        ext = '.webp'
+                    else:
+                        ext = '.jpg'
+                    media_type = 'photo'
+                else:
+                    # Пытаемся определить по расширению в URL
+                    if url.endswith(('.mp4', '.mov', '.avi', '.webm')):
+                        ext = os.path.splitext(url)[1]
+                        media_type = 'video'
+                    elif url.endswith(('.jpg', '.jpeg', '.png', '.webp')):
+                        ext = os.path.splitext(url)[1]
+                        media_type = 'photo'
+                    else:
+                        await progress_msg.edit_text("❌ Unsupported file type. Please upload a photo or video.")
+                        return
 
-            keyboard = types.InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+                # Сохраняем файл
+                file_uuid = str(uuid.uuid4())
+                dest_path = os.path.join(TEMP_DIR, f"{file_uuid}{ext}")
 
-            await message.answer(
-                f"✅ Image watermark saved!\n\n"
-                f"Now choose the position for your watermark:",
-                reply_markup=keyboard
-            )
+                file_data = await response.read()
+                with open(dest_path, 'wb') as f:
+                    f.write(file_data)
 
-        except Exception as e:
-            logging.error(f"Error handling watermark image: {e}")
-            await message.answer("❌ Error processing watermark image. Please try again.")
+                logging.info(f"Downloaded file from URL to {dest_path}")
 
-        return
+        await progress_msg.delete()
+
+        # Ensure user record exists
+        name = message.from_user.first_name or "Unknown"
+        username = message.from_user.username
+        await get_user(user_id, name, str(user_id), username)
+
+        # Сохраняем в кэш
+        file_cache[file_uuid] = dest_path
+        current_time = time.time()
+        file_cache_times[file_uuid] = current_time
+
+        # Сохраняем как последний файл пользователя
+        user_last_file[user_id] = {
+            'file_uuid': file_uuid,
+            'file_path': dest_path
+        }
+
+        # Отправляем клавиатуру с выбором количества копий
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+            [
+                types.InlineKeyboardButton(text="5", callback_data=f"copies|5|{file_uuid}|{media_type}"),
+                types.InlineKeyboardButton(text="10", callback_data=f"copies|10|{file_uuid}|{media_type}"),
+                types.InlineKeyboardButton(text="20", callback_data=f"copies|20|{file_uuid}|{media_type}"),
+                types.InlineKeyboardButton(text="30", callback_data=f"copies|30|{file_uuid}|{media_type}"),
+            ],
+            [
+                types.InlineKeyboardButton(text="40", callback_data=f"copies|40|{file_uuid}|{media_type}"),
+                types.InlineKeyboardButton(text="50", callback_data=f"copies|50|{file_uuid}|{media_type}"),
+                types.InlineKeyboardButton(text="75", callback_data=f"copies|75|{file_uuid}|{media_type}"),
+                types.InlineKeyboardButton(text="100", callback_data=f"copies|100|{file_uuid}|{media_type}"),
+            ],
+            [
+                types.InlineKeyboardButton(text="120", callback_data=f"copies|120|{file_uuid}|{media_type}"),
+            ],
+            [
+                types.InlineKeyboardButton(text="Ежемесячная подписка", callback_data=f"subscribe|monthly"),
+            ],
+            [
+                types.InlineKeyboardButton(text="Годовая подписка (4 месяца бесплатно)",
+                                           callback_data=f"subscribe|yearly"),
+            ]
+        ])
+        await message.answer(f"✅ File downloaded! How many copies do you want?", reply_markup=keyboard)
+
+    except Exception as e:
+        logging.error(f"Error downloading from URL: {e}")
+        await progress_msg.edit_text(f"❌ Error downloading file: {str(e)}")
 
 
 # Обработчик для неподдерживаемых сообщений
@@ -859,7 +716,7 @@ async def process_copies(callback: CallbackQuery):
                 url = s3_client.generate_presigned_url(
                     'get_object',
                     Params={'Bucket': S3_BUCKET_NAME, 'Key': key},
-                    ExpiresIn=3600  # 1 час
+                    ExpiresIn=604800  # 7 дней
                 )
                 logging.info(f"Presigned URL: {url[:50]}...")  # Log first 50 chars
                 download_links.append(url)
@@ -885,7 +742,7 @@ async def process_copies(callback: CallbackQuery):
         zip_url = s3_client.generate_presigned_url(
             'get_object',
             Params={'Bucket': S3_BUCKET_NAME, 'Key': zip_key},
-            ExpiresIn=3600
+            ExpiresIn=604800  # 7 дней
         )
 
         # Удаляем локальный ZIP
@@ -983,7 +840,7 @@ async def process_copies(callback: CallbackQuery):
 
         html_content += """
         </div>
-        <p style='text-align:center;color:#888;font-size:0.98em;margin-top:30px;'>Links valid for 1 hour.</p>
+        <p style='text-align:center;color:#888;font-size:0.98em;margin-top:30px;'>Links valid for 7 days.</p>
     </div>
 </body>
 </html>"""
@@ -998,7 +855,7 @@ async def process_copies(callback: CallbackQuery):
         page_url = s3_client.generate_presigned_url(
             'get_object',
             Params={'Bucket': S3_BUCKET_NAME, 'Key': html_key},
-            ExpiresIn=3600
+            ExpiresIn=604800  # 7 дней
         )
         logging.info(f"Page URL: {page_url[:50]}...")
 
