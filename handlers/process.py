@@ -328,7 +328,7 @@ async def handle_document(message: Message):
         await message.answer(
             f"❌ File is too large ({file_size_mb:.1f} MB).\n\n"
             f"Telegram Bot API limit: 20 MB\n\n"
-            f"Please send a smaller file or use our uploader: http://46.101.157.179/"
+            f"Please send a smaller file or use our uploader: https://uploader.fypaccs.shop/"
         )
         return
 
