@@ -45,7 +45,7 @@ async def cmd_help(message: Message):
         "⚠️ Errors & Issues:\n"
         "If the bot doesn't respond or freezes:\n"
         "  • Wait a few seconds — you might be in queue\n"
-        "  • Video too large? Use our uploader: http://46.101.157.179/\n"
+        "  • Video too large? Use our uploader: https://uploader.fypaccs.shop/\n"
         "  • Still having issues? Contact support\n\n"
 
         "📋 Available Commands:\n"

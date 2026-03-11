@@ -38,7 +38,7 @@ RESET_MODE = os.getenv("RESET_MODE", "daily")
 FREE_DAILY_LIMIT = int(os.getenv('FREE_DAILY_LIMIT', '100'))
 
 # Uploader URL
-UPLOADER_URL = os.getenv("UPLOADER_URL", "http://46.101.157.179/")
+UPLOADER_URL = os.getenv("UPLOADER_URL", "https://uploader.fypaccs.shop/")
 
 # Concurrency limits to prevent server overload
 MAX_CONCURRENT_USERS = int(os.getenv('MAX_CONCURRENT_USERS', '7'))  # Max users processing simultaneously
