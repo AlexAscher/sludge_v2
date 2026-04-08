@@ -160,7 +160,8 @@ async def subscribe_callback(cryptopay: CryptoPay, callback: types.CallbackQuery
             asset='USDT',
             description=description
         )
-        pending_payments[invoice.invoice_id] = {'user_id': callback.from_user.id, 'duration': duration, 'plan': plan_label}
+        pending_payments[invoice.invoice_id] = {'user_id': callback.from_user.id, 'duration': duration,
+                                                'plan': plan_label}
 
         text = f"💳 Subscription: {description}\nAmount: {amount} USDT\n\nPay via this link: {invoice.pay_url}\n\nYour status will be updated automatically after payment."
         await callback.message.answer(text)
@@ -169,10 +170,33 @@ async def subscribe_callback(cryptopay: CryptoPay, callback: types.CallbackQuery
         await callback.answer("Error creating invoice. Please try again later.", show_alert=True)
 
 
+async def init_cryptopay_with_retry(max_retries=3, delay=5):
+    """Initialize CryptoPay with retry logic for network issues"""
+    for attempt in range(max_retries):
+        try:
+            logging.info(f"Initializing CryptoPay (attempt {attempt + 1}/{max_retries})...")
+            cryptopay = CryptoPay(CRYPTOBOT_TOKEN, TESTNET)
+            logging.info("✅ CryptoPay initialized successfully")
+            return cryptopay
+        except Exception as e:
+            logging.warning(f"⚠️ CryptoPay init failed (attempt {attempt + 1}): {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(delay)
+            else:
+                logging.error(
+                    "❌ CryptoPay initialization failed after all retries. Payment system will be unavailable.")
+                return None
+
+
 async def main():
     logging.info("Starting bot main function")
-    # Инициализация базы данных и аутентификация
-    await init_db()
+
+    # Инициализация базы данных и аутентификация (graceful degradation)
+    try:
+        db_available = await init_db()
+    except Exception as e:
+        logging.error(f"Database initialization error: {e}")
+        db_available = False
 
     bot = Bot(
         token=BOT_TOKEN,
@@ -180,8 +204,9 @@ async def main():
     )
     dp = Dispatcher()
 
-    # Инициализация CryptoPay
-    cryptopay = CryptoPay(CRYPTOBOT_TOKEN, TESTNET)
+    # Инициализация CryptoPay с обработкой ошибок
+    cryptopay = await init_cryptopay_with_retry()
+    cryptopay_available = cryptopay is not None
 
     # Регистрируем middleware
     dp.message.middleware(limit_middleware)
@@ -193,31 +218,56 @@ async def main():
     dp.include_router(process.router)
     logging.info("All routers included: start, help, stats, process")
 
-    # Команда оплаты
-    dp.message.register(functools.partial(pay_command, cryptopay), Command("pay"))
+    # Команда оплаты (только если CryptoPay доступен)
+    if cryptopay_available:
+        dp.message.register(functools.partial(pay_command, cryptopay), Command("pay"))
 
-    # Обработчик callback
-    dp.callback_query.register(functools.partial(callback_handler, cryptopay),
-                               lambda c: c.data in ["renew_yes", "renew_no"])
-    # Subscription buttons (monthly/yearly)
-    dp.callback_query.register(functools.partial(subscribe_callback, cryptopay),
-                               lambda c: c.data and str(c.data).startswith("subscribe|"))
+        # Обработчик callback
+        dp.callback_query.register(functools.partial(callback_handler, cryptopay),
+                                   lambda c: c.data in ["renew_yes", "renew_no"])
+        # Subscription buttons (monthly/yearly)
+        dp.callback_query.register(functools.partial(subscribe_callback, cryptopay),
+                                   lambda c: c.data and str(c.data).startswith("subscribe|"))
+    else:
+        logging.warning("⚠️ CryptoPay disabled - payment commands will be unavailable")
 
     # Планировщик для проверки платежей каждые 30 секунд
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(check_payments, IntervalTrigger(seconds=30), args=[bot, cryptopay])
+
+    # Только добавляем задачи если CryptoPay доступен
+    if cryptopay_available:
+        scheduler.add_job(check_payments, IntervalTrigger(seconds=30), args=[bot, cryptopay])
+
     scheduler.add_job(check_expired_premiums, IntervalTrigger(seconds=60), args=[bot])
     scheduler.start()
 
-    print("🤖 Bot started with payment system...")
+    # Construct startup message
+    status_items = []
+    if db_available:
+        status_items.append("✅ database")
+    else:
+        status_items.append("⚠️  database disabled")
+
+    if cryptopay_available:
+        status_items.append("✅ payments")
+    else:
+        status_items.append("⚠️  payments disabled")
+
+    status_str = " | ".join(status_items)
+    print(f"🤖 Bot started [{status_str}]")
+    logging.info(f"Bot status: {status_str}")
+
     # Set bot commands
     try:
-        await bot.set_my_commands([
+        commands = [
             types.BotCommand(command="start", description="Start the bot"),
             types.BotCommand(command="help", description="Get help"),
-            types.BotCommand(command="pay", description="Pay for premium access"),
             types.BotCommand(command="stats", description="Get usage statistics"),
-        ])
+        ]
+        if cryptopay_available:
+            commands.insert(2, types.BotCommand(command="pay", description="Pay for premium access"))
+
+        await bot.set_my_commands(commands)
         logging.info("Bot commands set successfully")
     except Exception as e:
         logging.error(f"Failed to set bot commands: {e}")

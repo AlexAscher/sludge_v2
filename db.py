@@ -4,8 +4,11 @@ from datetime import date, datetime, timezone
 import time
 import json
 import os
+import asyncio
+import logging
 
 pb = PocketBase(PB_URL)
+logger = logging.getLogger(__name__)
 
 # Local fallback store for last_reset if PocketBase schema doesn't include the field.
 LAST_RESET_STORE = os.path.join(os.path.dirname(__file__), 'data', 'metrics', 'last_reset_store.json')
@@ -58,25 +61,69 @@ def get_current_reset_marker():
     return get_current_3min_block()
 
 
-async def init_db():
-    # Аутентификация как superuser
-    if PB_ADMIN_EMAIL and PB_ADMIN_PASSWORD:
-        try:
-            pb.admins.auth_with_password(PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD)
-            print("Authenticated as superuser in PocketBase")
-        except Exception as e:
-            print(f"Failed to authenticate with PocketBase: {e}")
-            raise
-    else:
-        print("Warning: PB_ADMIN_EMAIL or PB_ADMIN_PASSWORD not set. Running without authentication.")
+async def init_db(max_retries=5, delay=3, initial_wait=2):
+    """Initialize PocketBase connection with retry logic for network issues
 
-    # Предполагаем, что коллекция 'users' уже создана в PocketBase с полями:
-    # user_id: number
-    # is_premium: bool
-    # files_today: number
-    # last_reset: date
-    # name: plain text
-    pass
+    Args:
+        max_retries: Number of retry attempts
+        delay: Seconds to wait between retries
+        initial_wait: Initial wait time before first attempt (PocketBase startup)
+    """
+    # Wait for PocketBase to fully initialize
+    logger.info(f"Waiting {initial_wait}s for PocketBase to initialize...")
+    await asyncio.sleep(initial_wait)
+
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Initializing PocketBase (attempt {attempt + 1}/{max_retries})...")
+
+            # First check: Health endpoint (basic connectivity)
+            try:
+                pb.health.check()
+                logger.info("   ✓ Health check passed")
+            except Exception as e:
+                logger.warning(f"   ✗ Health check failed: {e}")
+                raise
+
+            # Small delay to let PocketBase fully initialize after health check
+            if attempt > 0:
+                await asyncio.sleep(1)
+
+            # Second check: Authentication (full readiness)
+            if PB_ADMIN_EMAIL and PB_ADMIN_PASSWORD:
+                pb.admins.auth_with_password(PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD)
+                logger.info("   ✓ Admin authentication successful")
+                logger.info("✅ PocketBase fully initialized")
+                return True
+            else:
+                logger.warning("⚠️  PB_ADMIN_EMAIL or PB_ADMIN_PASSWORD not set. Running without authentication.")
+                logger.info("✅ PocketBase health check passed (no auth configured)")
+                return True
+
+        except Exception as e:
+            logger.warning(f"⚠️  PocketBase init failed (attempt {attempt + 1}/{max_retries}): {str(e)[:100]}")
+            if attempt < max_retries - 1:
+                wait_time = delay * (2 ** attempt)  # Exponential backoff
+                logger.info(f"   Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error("\n❌ CRITICAL: Failed to connect to PocketBase after all retries\n")
+                logger.error(f"   PB_URL: {PB_URL}")
+                logger.error("\n   Possible causes:")
+                logger.error("   1. PocketBase service is not running")
+                logger.error("   2. URL/port is incorrect or has changed")
+                logger.error("   3. Credentials (PB_ADMIN_EMAIL, PB_ADMIN_PASSWORD) are wrong")
+                logger.error("   4. PocketBase is starting up or having startup issues")
+                logger.error("   5. VPN is interfering with local connection (127.0.0.1)\n")
+                logger.error("   Solutions:")
+                logger.error("   • Restart PocketBase: killall pocketbase (or close pocketbase.exe)")
+                logger.error("   • Wait 10+ seconds for PocketBase to fully start")
+                logger.error("   • Check PocketBase admin panel at http://127.0.0.1:8090/_/")
+                logger.error("   • Enable split tunneling in VPN for localhost\n")
+
+                # Don't crash - allow bot to run without database
+                logger.error("   Continuing without database (some features may be limited)...\n")
+                return False
 
 
 async def get_user(user_id: int, name: str = None, telegram_id: str = None, username: str = None):
@@ -154,7 +201,7 @@ async def get_user(user_id: int, name: str = None, telegram_id: str = None, user
             if username and username_field != username:
                 update_data['username'] = username
             elif username_field in (None, '') and username:
-                                print(f"Failed to parse premium_end for user {user_id}: {premium_end} -> {e}")
+                print(f"Failed to parse premium_end for user {user_id}: {premium_end} -> {e}")
             # Никогда не обновляем last_reset, files_today, total здесь!
             if update_data:
                 print(f"[get_user] Only updating name/username: {update_data}")
@@ -230,7 +277,8 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
                 marker = get_current_reset_marker()
                 should_reset = False
                 # Лог для отладки
-                print(f"[increment_files] attempt={attempt} user_id={user_id} current_files={current_files} current_total={current_total} last_reset_str={last_reset_str} marker={marker}")
+                print(
+                    f"[increment_files] attempt={attempt} user_id={user_id} current_files={current_files} current_total={current_total} last_reset_str={last_reset_str} marker={marker}")
                 if last_reset_str:
                     try:
                         if str(RESET_MODE).lower() == 'daily':
@@ -240,7 +288,8 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
                                 current_files = 0
                                 should_reset = True
                             else:
-                                print(f"[increment_files] НЕТ сброса: last_reset_time={last_reset_time} == marker={marker}")
+                                print(
+                                    f"[increment_files] НЕТ сброса: last_reset_time={last_reset_time} == marker={marker}")
                         else:
                             last_reset_time = datetime.fromisoformat(last_reset_str)
                             if last_reset_time < marker:
@@ -248,7 +297,8 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
                                 current_files = 0
                                 should_reset = True
                             else:
-                                print(f"[increment_files] НЕТ сброса: last_reset_time={last_reset_time} >= marker={marker}")
+                                print(
+                                    f"[increment_files] НЕТ сброса: last_reset_time={last_reset_time} >= marker={marker}")
                     except Exception as e:
                         print(f"[increment_files] Ошибка парсинга last_reset: {e}, СБРОС!")
                         current_files = 0
@@ -267,10 +317,12 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
                     except Exception:
                         limit = 20
                     if new_files > limit:
-                        print(f"[increment_files] would exceed limit for user {user_id}: current={current_files} amount={amount} limit={limit}")
+                        print(
+                            f"[increment_files] would exceed limit for user {user_id}: current={current_files} amount={amount} limit={limit}")
                         # Extra debug info: show parsed last_reset and is_premium
                         try:
-                            print(f"[increment_files] DEBUG user={user_id} is_premium={is_premium} last_reset_str={last_reset_str} marker={marker}")
+                            print(
+                                f"[increment_files] DEBUG user={user_id} is_premium={is_premium} last_reset_str={last_reset_str} marker={marker}")
                         except Exception:
                             pass
                         # Do not perform update; signal caller that limit was exceeded
@@ -312,10 +364,12 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
                     # Проверяем СТРОГОЕ равенство - если значение отличается, значит произошла race condition
                     # и нужно повторить операцию с актуальным значением из базы
                     if verified_files == new_files:
-                        print(f"[increment_files] Success on attempt={attempt}: files_today={verified_files} (expected {new_files})")
+                        print(
+                            f"[increment_files] Success on attempt={attempt}: files_today={verified_files} (expected {new_files})")
                         return True
                     else:
-                        print(f"[increment_files] Mismatch after update on attempt={attempt}: verified_files={verified_files} expected={new_files}, retrying with fresh data")
+                        print(
+                            f"[increment_files] Mismatch after update on attempt={attempt}: verified_files={verified_files} expected={new_files}, retrying with fresh data")
                         # record уже обновлена свежими данными выше, следующая итерация будет использовать актуальное значение
                         continue
                 except Exception as e:
@@ -327,7 +381,8 @@ async def increment_files(user_id: int, amount: int = 1, name: str = None, teleg
                         pass
                     continue
             # Если все попытки не удались — логируем и выходим
-            print(f"[increment_files] All attempts failed for user {user_id}. Last known current_files={getattr(record, 'files_today', None)}")
+            print(
+                f"[increment_files] All attempts failed for user {user_id}. Last known current_files={getattr(record, 'files_today', None)}")
             return False
         else:
             # Create new user with initial counts
