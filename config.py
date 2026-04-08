@@ -1,5 +1,10 @@
 import os
 
+# Bypass VPN proxy for localhost connections (must be set before any HTTP clients init)
+_no_proxy = 'localhost,127.0.0.1,::1'
+os.environ.setdefault('NO_PROXY', _no_proxy)
+os.environ.setdefault('no_proxy', _no_proxy)
+
 # Директории
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -26,7 +31,7 @@ S3_REGION = os.getenv("S3_REGION", "fra1")
 S3_ENDPOINT = os.getenv("S3_ENDPOINT")  # Для DigitalOcean Spaces: https://[region].digitaloceanspaces.com (например, https://fra1.digitaloceanspaces.com)
 
 # PocketBase
-PB_URL = os.getenv("PB_URL", "http://127.0.0.1:8090")  # URL PocketBase сервера
+PB_URL = os.getenv("PB_URL", "http://localhost:8090")  # URL PocketBase сервера (localhost вместо 127.0.0.1 для совместимости с VPN)
 PB_ADMIN_EMAIL = os.getenv("PB_ADMIN_EMAIL")  # Email superuser для аутентификации
 PB_ADMIN_PASSWORD = os.getenv("PB_ADMIN_PASSWORD")  # Пароль superuser
 
