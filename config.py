@@ -1,9 +1,9 @@
 import os
 
-# Bypass VPN proxy for localhost connections (must be set before any HTTP clients init)
-_no_proxy = 'localhost,127.0.0.1,::1'
-os.environ.setdefault('NO_PROXY', _no_proxy)
-os.environ.setdefault('no_proxy', _no_proxy)
+# Ensure local services bypass system/VPN proxies.
+_no_proxy = os.getenv("NO_PROXY", "localhost,127.0.0.1,::1")
+os.environ["NO_PROXY"] = _no_proxy
+os.environ["no_proxy"] = _no_proxy
 
 # Директории
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,6 +23,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 # CryptoBot токен для оплаты
 CRYPTOBOT_TOKEN = os.getenv("CRYPTOBOT_TOKEN")
 
+# Optional proxy for Telegram Bot API (aiogram/aiohttp), e.g. http://127.0.0.1:10809
+TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY")
+
 # AWS S3 настройки (или compatible)
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")  # Для Backblaze: applicationKeyId | Для DigitalOcean Spaces: Access Key из Spaces Keys
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")  # Для Backblaze: applicationKey | Для DigitalOcean Spaces: Secret Key из Spaces Keys
@@ -31,7 +34,7 @@ S3_REGION = os.getenv("S3_REGION", "fra1")
 S3_ENDPOINT = os.getenv("S3_ENDPOINT")  # Для DigitalOcean Spaces: https://[region].digitaloceanspaces.com (например, https://fra1.digitaloceanspaces.com)
 
 # PocketBase
-PB_URL = os.getenv("PB_URL", "http://localhost:8090")  # URL PocketBase сервера (localhost вместо 127.0.0.1 для совместимости с VPN)
+PB_URL = os.getenv("PB_URL", "http://localhost:8090")  # URL PocketBase сервера
 PB_ADMIN_EMAIL = os.getenv("PB_ADMIN_EMAIL")  # Email superuser для аутентификации
 PB_ADMIN_PASSWORD = os.getenv("PB_ADMIN_PASSWORD")  # Пароль superuser
 

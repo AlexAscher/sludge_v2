@@ -4,7 +4,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import BOT_TOKEN, CRYPTOBOT_TOKEN, FREE_DAILY_LIMIT
+from config import BOT_TOKEN, CRYPTOBOT_TOKEN, FREE_DAILY_LIMIT, TELEGRAM_PROXY
 import aiohttp
 from handlers import start, help, process, stats
 from db import get_user, increment_files, set_premium, init_db, get_expired_users, pb
@@ -198,9 +198,16 @@ async def main():
         logging.error(f"Database initialization error: {e}")
         db_available = False
 
+    session = AiohttpSession(proxy=TELEGRAM_PROXY) if TELEGRAM_PROXY else AiohttpSession()
+    if TELEGRAM_PROXY:
+        logging.info("Telegram proxy is enabled for aiogram session")
+    else:
+        logging.warning("Telegram proxy is not set. If Telegram is blocked, set TELEGRAM_PROXY in .env")
+
     bot = Bot(
         token=BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode="HTML")
+        default=DefaultBotProperties(parse_mode="HTML"),
+        session=session,
     )
     dp = Dispatcher()
 

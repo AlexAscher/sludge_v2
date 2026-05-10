@@ -1,0 +1,23 @@
+Monthly report for 2026-04
+
+Per-day details:
+
+2026-04-08: files=5, 0.0011 GB, premium_purchased=0
+Active users:
+  Alexey (6095619097): free, files=5, Memory=0.0011 GB, username=Alexey
+
+2026-04-22: files=10, 0.0016 GB, premium_purchased=0
+Active users:
+  Alexey (6095619097): free, files=10, Memory=0.0016 GB, username=Alexey
+
+
+Summary:
+
+Files this month: 15
+Bytes this month: 0.0027 GB
+Premium purchased this month: 0
+Files all time: 953
+Total bytes all time: 0.215 GB
+Storage cumulative (tracked uploads): 0.215 GB
+Total users (approx): 2
+Paid users (approx): 0
