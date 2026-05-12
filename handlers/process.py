@@ -193,7 +193,7 @@ async def handle_photo(message: Message):
             types.InlineKeyboardButton(text="Годовая подписка (4 месяца бесплатно)", callback_data=f"subscribe|yearly"),
         ]
     ])
-    await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
+    await message.answer("Файл обнаружен. Сколько копий вам нужно?", reply_markup=keyboard)
 
 
 @router.message(F.video)
@@ -298,7 +298,7 @@ async def handle_video(message: Message):
             types.InlineKeyboardButton(text="Годовая подписка (4 месяца бесплатно)", callback_data=f"subscribe|yearly"),
         ]
     ])
-    await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
+    await message.answer("Файл обнаружен. Сколько копий вам нужно?", reply_markup=keyboard)
 
 
 @router.message(F.document)
@@ -432,7 +432,7 @@ async def handle_document(message: Message):
             types.InlineKeyboardButton(text="Годовая подписка (4 месяца бесплатно)", callback_data=f"subscribe|yearly"),
         ]
     ])
-    await message.answer("File detected. How many copies do you want?", reply_markup=keyboard)
+    await message.answer("Файл обнаружен. Сколько копий вам нужно?", reply_markup=keyboard)
 
 
 # Обработчик текстовых сообщений
