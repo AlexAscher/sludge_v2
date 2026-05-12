@@ -15,7 +15,7 @@ import config  # Импорт config.py
 
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)  # Включаем CORS для всех роутов
 
 # Настройки из config.py
@@ -35,6 +35,10 @@ s3_client = boto3.client(
 )
 
 UPLOAD_FOLDER = 'uploads/'
+
+@app.route('/', methods=['GET'])
+def index():
+    return app.send_static_file('uploader.html')
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
