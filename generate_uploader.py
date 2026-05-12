@@ -19,10 +19,10 @@ except ImportError as e:
 
 # Шаблон uploader.html
 TEMPLATE = """<!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Uploader (DigitalOcean Spaces)</title>
+    <title>Загрузчик файлов</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f5f6fa; margin: 0; padding: 0; }
         .container { max-width: 500px; margin: 60px auto; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 32px; }
@@ -35,9 +35,9 @@ TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 <div class="container">
-    <h1>Upload your file</h1>
+    <h1>Загрузите файл</h1>
     <input type="file" id="fileInput" accept="image/*,video/*" />
-    <button id="uploadBtn">Upload</button>
+    <button id="uploadBtn">Загрузить</button>
     <div class="status" id="status"></div>
 </div>
 <script>
@@ -64,7 +64,7 @@ function isValidFileType(file) {
 async function uploadFile(file) {
     const fileName = UPLOAD_PATH + Date.now() + '_' + encodeURIComponent(file.name);
     const url = `https://${SPACE_NAME}.${REGION}.digitaloceanspaces.com/${fileName}`;
-    document.getElementById('status').innerText = 'Uploading...';
+    document.getElementById('status').innerText = 'Загрузка...';
     try {
         const resp = await fetch(url, {
             method: 'PUT',
@@ -77,10 +77,10 @@ async function uploadFile(file) {
         if (resp.ok) {
             document.getElementById('status').innerHTML = `✅ Файл загружен!<br>Скопируйте ссылку и отправьте её боту:<br><input type='text' value='${url}' readonly style='width:100%;margin-top:8px;' onclick='this.select()'>`;
         } else {
-            document.getElementById('status').innerText = `❌ Upload failed: ${resp.status} ${resp.statusText}`;
+            document.getElementById('status').innerText = `❌ Ошибка загрузки: ${resp.status} ${resp.statusText}`;
         }
     } catch (error) {
-        document.getElementById('status').innerText = `❌ Upload failed: ${error.message}`;
+        document.getElementById('status').innerText = `❌ Ошибка загрузки: ${error.message}`;
     }
 }
 

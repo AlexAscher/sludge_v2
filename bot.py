@@ -33,7 +33,7 @@ async def check_payments(bot: Bot, cryptopay: CryptoPay):
                 plan = payload.get('plan', 'unknown')
                 await set_premium(user_id, True, duration)
                 await metrics.record_premium_purchase(user_id)
-                await bot.send_message(user_id, f"✅ Payment received! You now have premium ({plan})")
+                await bot.send_message(user_id, f"✅ Платёж получен! Теперь у вас премиум ({plan})")
                 # remove by invoice_id
                 del pending_payments[invoice_id]
         except Exception as e:
@@ -54,10 +54,10 @@ async def check_expired_premiums(bot: Bot):
             print(f"Update response for {user_id}: {getattr(res, 'id', res)}")
             # Отправить сообщение с кнопками
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Yes", callback_data="renew_yes")],
-                [InlineKeyboardButton(text="No", callback_data="renew_no")]
+                [InlineKeyboardButton(text="Да", callback_data="renew_yes")],
+                [InlineKeyboardButton(text="Нет", callback_data="renew_no")]
             ])
-            await bot.send_message(user_id, "Your subscription has expired. Do you want to renew?",
+            await bot.send_message(user_id, "Ваша подписка закончилась. Хотите продлить?",
                                    reply_markup=keyboard)
         except Exception as e:
             logging.error(f"Error processing expired premium for {user_id}: {e}")
@@ -78,14 +78,14 @@ async def pay_command(cryptopay: CryptoPay, message: types.Message):
     invoice = await cryptopay.create_invoice(
         amount=0.05,
         asset='USDT',
-        description='Temporary unlimited access (30 seconds)'
+        description='Временный безлимитный доступ (30 секунд)'
     )
 
     # Store payload keyed by invoice_id so check_payments can grant correct duration
     pending_payments[invoice.invoice_id] = {'user_id': user_id, 'duration': 30, 'plan': 'temporary'}
 
     # Send payment link
-    text = f"💳 Pay 0.05 USDT for temporary unlimited access (30 seconds).\n\n{invoice.pay_url}\n\nYour status will be updated automatically after payment."
+    text = f"💳 Оплатите 0.05 USDT за временный безлимитный доступ (30 секунд).\n\n{invoice.pay_url}\n\nСтатус обновится автоматически после оплаты."
     await message.answer(text)
 
 
@@ -98,16 +98,16 @@ async def callback_handler(cryptopay: CryptoPay, callback: types.CallbackQuery):
             invoice = await cryptopay.create_invoice(
                 amount=0.05,
                 asset='USDT',
-                description='Temporary unlimited access (30 seconds)'
+                description='Временный безлимитный доступ (30 секунд)'
             )
             pending_payments[invoice.invoice_id] = {'user_id': user_id, 'duration': 30, 'plan': 'temporary'}
 
             # Отправляем платежную ссылку
-            text = f"💳 Pay 0.05 USDT for temporary unlimited access (30 seconds).\n\n{invoice.pay_url}\n\nYour status will be updated automatically after payment."
+            text = f"💳 Оплатите 0.05 USDT за временный безлимитный доступ (30 секунд).\n\n{invoice.pay_url}\n\nСтатус обновится автоматически после оплаты."
             await callback.message.edit_text(text)
         except Exception as e:
             logging.error(f"Error creating invoice for {user_id}: {e}")
-            await callback.answer("Error creating payment link. Try /pay command.")
+            await callback.answer("Ошибка создания ссылки на оплату. Попробуйте команду /pay.")
     elif callback.data == "renew_no":
         # Remove the question message and send the main informational/start message
         try:
@@ -115,12 +115,12 @@ async def callback_handler(cryptopay: CryptoPay, callback: types.CallbackQuery):
         except Exception:
             pass
         main_text = (
-            "Welcome to @SludgeAI 🚀\n\n"
-            "Create truly unique videos and images that algorithms won’t flag as duplicates! Sludge AI automatically modifies your media files—altering metadata, applying subtle randomized visual changes, and ensuring every clip or image stands out as one-of-a-kind.\n\n"
-            "The result? Greater reach and a better chance of landing on the FYP and in recommendations!\n\n"
-            "Get started now: upload a video or photo from your gallery ⬇️\n\n"
-            "👀 See real reviews and examples in @sludgevouches!\n\n"
-            "Your content—your voice. Make it seen 🚀"
+            "Добро пожаловать в @SludgeAI 🚀\n\n"
+            "Создавайте действительно уникальные видео и изображения, которые алгоритмы не помечают как дубликаты. Sludge AI автоматически меняет ваши медиафайлы: правит метаданные, вносит мягкие случайные визуальные изменения и помогает каждому клипу или изображению выглядеть как единственный экземпляр.\n\n"
+            "Результат: больший охват и выше шанс попасть в FYP и рекомендации!\n\n"
+            "Начните сейчас: загрузите видео или фото из галереи ⬇️\n\n"
+            "👀 Реальные отзывы и примеры: @sludgevouches\n\n"
+            "Ваш контент — ваш голос. Сделайте его заметным 🚀"
         )
         await callback.message.bot.send_message(user_id, main_text)
     else:
@@ -136,23 +136,23 @@ async def subscribe_callback(cryptopay: CryptoPay, callback: types.CallbackQuery
         data = callback.data or ''
         parts = data.split('|')
         if len(parts) < 2:
-            await callback.answer("Invalid subscription request", show_alert=True)
+            await callback.answer("Некорректный запрос на подписку", show_alert=True)
             return
         plan = parts[1]
         if plan == 'monthly':
             amount = 0.05
             # monthly = 30 days
             duration = 30 * 24 * 3600
-            description = 'Monthly subscription (30 days) for SludgeAI'
+            description = 'Ежемесячная подписка (30 дней) для SludgeAI'
             plan_label = 'monthly'
         elif plan == 'yearly':
             amount = 0.5
             # For testing: make yearly actually 1 minute
             duration = 60
-            description = 'Yearly subscription (12 months, 4 months free) for SludgeAI'
+            description = 'Годовая подписка (12 месяцев, 4 месяца бесплатно) для SludgeAI'
             plan_label = 'yearly'
         else:
-            await callback.answer("Unknown plan", show_alert=True)
+            await callback.answer("Неизвестный тариф", show_alert=True)
             return
 
         invoice = await cryptopay.create_invoice(
@@ -163,11 +163,11 @@ async def subscribe_callback(cryptopay: CryptoPay, callback: types.CallbackQuery
         pending_payments[invoice.invoice_id] = {'user_id': callback.from_user.id, 'duration': duration,
                                                 'plan': plan_label}
 
-        text = f"💳 Subscription: {description}\nAmount: {amount} USDT\n\nPay via this link: {invoice.pay_url}\n\nYour status will be updated automatically after payment."
+        text = f"💳 Подписка: {description}\nСумма: {amount} USDT\n\nОплатите по этой ссылке: {invoice.pay_url}\n\nСтатус обновится автоматически после оплаты."
         await callback.message.answer(text)
     except Exception as e:
         logging.error(f"Error creating subscription invoice for {callback.from_user.id}: {e}")
-        await callback.answer("Error creating invoice. Please try again later.", show_alert=True)
+        await callback.answer("Ошибка создания счёта. Попробуйте позже.", show_alert=True)
 
 
 async def init_cryptopay_with_retry(max_retries=3, delay=5):
@@ -202,7 +202,7 @@ async def main():
     if TELEGRAM_PROXY:
         logging.info("Telegram proxy is enabled for aiogram session")
     else:
-        logging.warning("Telegram proxy is not set. If Telegram is blocked, set TELEGRAM_PROXY in .env")
+        logging.warning("Telegram proxy не задан. Если Telegram заблокирован, укажите TELEGRAM_PROXY в .env")
 
     bot = Bot(
         token=BOT_TOKEN,
@@ -267,12 +267,12 @@ async def main():
     # Set bot commands
     try:
         commands = [
-            types.BotCommand(command="start", description="Start the bot"),
-            types.BotCommand(command="help", description="Get help"),
-            types.BotCommand(command="stats", description="Get usage statistics"),
+            types.BotCommand(command="start", description="Запустить бота"),
+            types.BotCommand(command="help", description="Помощь"),
+            types.BotCommand(command="stats", description="Статистика использования"),
         ]
         if cryptopay_available:
-            commands.insert(2, types.BotCommand(command="pay", description="Pay for premium access"))
+            commands.insert(2, types.BotCommand(command="pay", description="Оплатить премиум"))
 
         await bot.set_my_commands(commands)
         logging.info("Bot commands set successfully")

@@ -43,11 +43,11 @@ def index():
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+        return jsonify({'error': 'Файл не найден в запросе'}), 400
 
     file = request.files['file']
     if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+        return jsonify({'error': 'Файл не выбран'}), 400
 
     # Валидация типа файла
     allowed_types = [
@@ -55,7 +55,7 @@ def upload_file():
         'video/mp4', 'video/quicktime', 'video/x-matroska', 'video/webm', 'video/avi', 'video/mpeg', 'video/ogg'
     ]
     if file.content_type not in allowed_types:
-        return jsonify({'error': 'Invalid file type. Only images and videos allowed.'}), 400
+        return jsonify({'error': 'Неверный тип файла. Разрешены только изображения и видео.'}), 400
 
     filename = secure_filename(file.filename)
     file_key = f"{UPLOAD_FOLDER}{int(__import__('time').time() * 1000)}_{filename}"

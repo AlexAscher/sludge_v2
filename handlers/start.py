@@ -20,31 +20,31 @@ async def cmd_start(message: Message):
         files_used = user_data.get('files_today', 0)
 
         welcome_text = (
-            "Welcome to FYP Repurpose 🥷\n\n"
-            "Create undetectable, algorithm-proof copies of your photos and videos — so your content never gets flagged as duplicate.\n\n"
-            "We automatically modify metadata and apply invisible, unique tweaks to every file. The result? Higher reach, more views, and better chances to hit the FYP!\n\n"
-            "✅ See real examples and proof: @fypvouches\n"
-            "✅ Just send a photo or video to get started!\n\n"
+            "Добро пожаловать в FYP Repurpose 🥷\n\n"
+            "Создавайте незаметные копии фото и видео, которые алгоритмы не помечают как дубликаты.\n\n"
+            "Мы автоматически меняем метаданные и вносим незаметные уникальные правки в каждый файл. Результат: больший охват, больше просмотров и выше шанс попасть в FYP!\n\n"
+            "✅ Реальные примеры и подтверждения: @fypvouches\n"
+            "✅ Просто отправьте фото или видео, чтобы начать!\n\n"
         )
 
         if is_premium:
-            welcome_text += "⭐ Premium: Unlimited copies\n\n"
+            welcome_text += "⭐ Премиум: безлимитные копии\n\n"
         else:
-            welcome_text += f"📊 Free today: {files_used}/{FREE_DAILY_LIMIT} used\n"
-            welcome_text += "✨ Want unlimited? Type /pay\n\n"
+            welcome_text += f"📊 Сегодня бесплатно: использовано {files_used}/{FREE_DAILY_LIMIT}\n"
+            welcome_text += "✨ Нужен безлимит? Введите /pay\n\n"
 
-        welcome_text += "Your content. Your voice. Finally seen. 🚀"
+        welcome_text += "Ваш контент. Ваш голос. Наконец-то замечен. 🚀"
 
         await message.answer(welcome_text)
     except Exception as e:
         # Fallback если не удалось получить данные пользователя
         await message.answer(
-            "Welcome to FYP Repurpose 🥷\n\n"
-            "Create undetectable, algorithm-proof copies of your photos and videos — so your content never gets flagged as duplicate.\n\n"
-            "We automatically modify metadata and apply invisible, unique tweaks to every file. The result? Higher reach, more views, and better chances to hit the FYP!\n\n"
-            "✅ See real examples and proof: @fypvouches\n"
-            "✅ Just send a photo or video to get started!\n\n"
-            "📊 Free today: 0/100 used\n"
-            "✨ Want unlimited? Type /pay\n\n"
-            "Your content. Your voice. Finally seen. 🚀"
+            "Добро пожаловать в FYP Repurpose 🥷\n\n"
+            "Создавайте незаметные копии фото и видео, которые алгоритмы не помечают как дубликаты.\n\n"
+            "Мы автоматически меняем метаданные и вносим незаметные уникальные правки в каждый файл. Результат: больший охват, больше просмотров и выше шанс попасть в FYP!\n\n"
+            "✅ Реальные примеры и подтверждения: @fypvouches\n"
+            "✅ Просто отправьте фото или видео, чтобы начать!\n\n"
+            "📊 Сегодня бесплатно: использовано 0/100\n"
+            "✨ Нужен безлимит? Введите /pay\n\n"
+            "Ваш контент. Ваш голос. Наконец-то замечен. 🚀"
         )

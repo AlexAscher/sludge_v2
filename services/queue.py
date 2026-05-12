@@ -26,18 +26,18 @@ class AsyncProcessingQueue:
         async with self._lock:
             # If user already has an active task, reject
             if user_id in self.active_users:
-                return False, "You already have a task in progress. Please wait."
+                return False, "У вас уже есть активная задача. Подождите."
 
             # If user is in queue, reject
             if user_id in self.queue_positions:
-                return False, "You're already in queue. Please wait."
+                return False, "Вы уже в очереди. Подождите."
 
             # If can process immediately
             if len(self.active_users) < self.max_concurrent:
                 logger.info(f"Starting immediate processing for user {user_id}")
                 task = asyncio.create_task(self._process_task(user_id, callback_query, count, file_uuid, media_type))
                 self.active_users[user_id] = task
-                return True, "Processing started immediately."
+                return True, "Обработка началась сразу."
 
             # Otherwise add to queue
             self.queue.append({
@@ -51,7 +51,7 @@ class AsyncProcessingQueue:
             self._update_queue_positions()
             position = self.queue_positions[user_id]
             logger.info(f"User {user_id} added to queue at position {position}")
-            return True, "Your request is in queue. You'll be notified when processing starts."
+            return True, "Ваш запрос поставлен в очередь. Вы получите уведомление, когда начнётся обработка."
 
     def _update_queue_positions(self):
         """Update queue position numbers"""
@@ -88,7 +88,7 @@ class AsyncProcessingQueue:
 
                     # Notify user their task is starting
                     try:
-                        await next_task['callback_query'].message.answer("🔄 Your task is now being processed...")
+                        await next_task['callback_query'].message.answer("🔄 Ваша задача сейчас обрабатывается...")
                     except Exception:
                         pass
 

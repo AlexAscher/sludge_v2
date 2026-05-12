@@ -78,16 +78,16 @@ logger_caption = logging.getLogger("caption_handler")
 @router.callback_query(F.data == "tools")
 async def show_tools_menu(callback: CallbackQuery):
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="⬅️ Go Back", callback_data="back")],
+        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="back")],
     ])
     # If the message has media — use edit_caption, otherwise edit_text
     try:
         if callback.message.photo or callback.message.video:
-            await callback.message.edit_caption(caption="Select a template option:", reply_markup=keyboard)
+            await callback.message.edit_caption(caption="Выберите вариант шаблона:", reply_markup=keyboard)
         else:
-            await callback.message.edit_text("Select a template option:", reply_markup=keyboard)
+            await callback.message.edit_text("Выберите вариант шаблона:", reply_markup=keyboard)
     except Exception as e:
-        await callback.answer("Failed to open tools menu.", show_alert=True)
+        await callback.answer("Не удалось открыть меню инструментов.", show_alert=True)
 
 
 # Go Back button handler (restore previous menu)
@@ -97,25 +97,25 @@ async def go_back_menu(callback: CallbackQuery):
     is_photo = callback.message.photo is not None
     is_video = callback.message.video is not None
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="Templates", callback_data="templates"),
-         types.InlineKeyboardButton(text="Tools", callback_data="tools")],
-        [types.InlineKeyboardButton(text="Bulk Templates", callback_data="bulk_templates"),
-         types.InlineKeyboardButton(text="Bulk Randomize", callback_data="bulk_randomize")],
-        [types.InlineKeyboardButton(text="Get Paid to Post 💰", callback_data="get_paid")],
-        [types.InlineKeyboardButton(text="Monthly Subscription", callback_data="monthly_sub")],
-        [types.InlineKeyboardButton(text="Annual Subscription (3 months free)", callback_data="annual_sub")],
+        [types.InlineKeyboardButton(text="Шаблоны", callback_data="templates"),
+         types.InlineKeyboardButton(text="Инструменты", callback_data="tools")],
+        [types.InlineKeyboardButton(text="Массовые шаблоны", callback_data="bulk_templates"),
+         types.InlineKeyboardButton(text="Массовая рандомизация", callback_data="bulk_randomize")],
+        [types.InlineKeyboardButton(text="Платят за публикацию 💰", callback_data="get_paid")],
+        [types.InlineKeyboardButton(text="Ежемесячная подписка", callback_data="monthly_sub")],
+        [types.InlineKeyboardButton(text="Годовая подписка (3 месяца бесплатно)", callback_data="annual_sub")],
     ])
     try:
         if is_photo:
-            await callback.message.edit_caption(caption="✅ Done! Here is your photo with new metadata.",
+            await callback.message.edit_caption(caption="✅ Готово! Вот ваше фото с новыми метаданными.",
                                                 reply_markup=keyboard)
         elif is_video:
-            await callback.message.edit_caption(caption="✅ Done! Here is your video with new metadata.",
+            await callback.message.edit_caption(caption="✅ Готово! Вот ваше видео с новыми метаданными.",
                                                 reply_markup=keyboard)
         else:
             await callback.message.edit_reply_markup(reply_markup=keyboard)
     except Exception as e:
-        await callback.answer("Failed to go back.", show_alert=True)
+        await callback.answer("Не удалось вернуться назад.", show_alert=True)
 
 
 @router.message(F.photo)
@@ -193,7 +193,7 @@ async def handle_photo(message: Message):
             types.InlineKeyboardButton(text="Годовая подписка (4 месяца бесплатно)", callback_data=f"subscribe|yearly"),
         ]
     ])
-    await message.answer("Файл обнаружен. Сколько копий вам нужно?", reply_markup=keyboard)
+    await message.answer("Файл получен. Сколько копий вам нужно?", reply_markup=keyboard)
 
 
 @router.message(F.video)
@@ -206,9 +206,9 @@ async def handle_video(message: Message):
     # Проверяем размер файла (Telegram Bot API лимит 20 МБ)
     if video.file_size and video.file_size > 20 * 1024 * 1024:
         await message.answer(
-            f"❌ Video file is too large ({file_size_mb:.1f} MB).\n\n"
-            f"Telegram Bot API limit: 20 MB\n\n"
-            f"Please send a smaller video or compress it first."
+            f"❌ Видео слишком большое ({file_size_mb:.1f} MB).\n\n"
+            f"Лимит Telegram Bot API: 20 МБ\n\n"
+            f"Отправьте видео меньшего размера или сначала сожмите его."
         )
         return
 
@@ -239,7 +239,7 @@ async def handle_video(message: Message):
     dest_path = os.path.join(TEMP_DIR, f"{video.file_id}{ext}")
 
     # Показываем прогресс
-    progress_msg = await message.answer(f"⏳ Downloading video ({file_size_mb:.1f} MB)...")
+    progress_msg = await message.answer(f"⏳ Скачиваю видео ({file_size_mb:.1f} MB)...")
 
     # Скачиваем с обработкой таймаута
     try:
@@ -247,13 +247,13 @@ async def handle_video(message: Message):
         await progress_msg.delete()
     except TimeoutError:
         await progress_msg.edit_text(
-            f"❌ Timeout while downloading video ({file_size_mb:.1f} MB).\n\n"
-            f"Please try a smaller file or check your connection."
+            f"❌ Тайм-аут при скачивании видео ({file_size_mb:.1f} MB).\n\n"
+            f"Попробуйте файл поменьше или проверьте соединение."
         )
         return
     except Exception as e:
         logging.error(f"Error downloading video: {e}")
-        await progress_msg.edit_text(f"❌ Error downloading video: {e}")
+        await progress_msg.edit_text(f"❌ Ошибка при скачивании видео: {e}")
         return
 
     # Ensure user record exists and username is stored
@@ -298,7 +298,7 @@ async def handle_video(message: Message):
             types.InlineKeyboardButton(text="Годовая подписка (4 месяца бесплатно)", callback_data=f"subscribe|yearly"),
         ]
     ])
-    await message.answer("Файл обнаружен. Сколько копий вам нужно?", reply_markup=keyboard)
+    await message.answer("Файл получен. Сколько копий вам нужно?", reply_markup=keyboard)
 
 
 @router.message(F.document)
@@ -316,19 +316,19 @@ async def handle_document(message: Message):
 
     if not is_image and not is_video:
         await message.answer(
-            "❌ Please send only photos or videos.\n\n"
-            "Supported formats:\n"
-            "📷 Images: JPG, PNG, WEBP\n"
-            "🎥 Videos: MP4, MOV, AVI, WEBM"
+            "❌ Отправляйте только фото или видео.\n\n"
+            "Поддерживаемые форматы:\n"
+            "📷 Изображения: JPG, PNG, WEBP\n"
+            "🎥 Видео: MP4, MOV, AVI, WEBM"
         )
         return
 
     # Проверяем размер файла (Telegram Bot API лимит 20 МБ)
     if document.file_size and document.file_size > 20 * 1024 * 1024:
         await message.answer(
-            f"❌ File is too large ({file_size_mb:.1f} MB).\n\n"
-            f"Telegram Bot API limit: 20 MB\n\n"
-            f"Please send a smaller file or use our uploader: https://uploader.fypaccs.shop/"
+            f"❌ Файл слишком большой ({file_size_mb:.1f} MB).\n\n"
+            f"Лимит Telegram Bot API: 20 МБ\n\n"
+            f"Отправьте файл меньшего размера или используйте наш загрузчик: https://uploader.fypaccs.shop/"
         )
         return
 
@@ -503,14 +503,14 @@ async def handle_url_upload(message: Message, url: str):
         if old_file_uuid and old_file_uuid in file_cache_times:
             del file_cache_times[old_file_uuid]
 
-    progress_msg = await message.answer("⏳ Downloading file from URL...")
+    progress_msg = await message.answer("⏳ Скачиваю файл по ссылке...")
 
     try:
         # Скачиваем файл по URL
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status != 200:
-                    await progress_msg.edit_text(f"❌ Failed to download file. HTTP {response.status}")
+                    await progress_msg.edit_text(f"❌ Не удалось скачать файл. HTTP {response.status}")
                     return
 
                 # Определяем расширение из Content-Type или URL
@@ -535,7 +535,7 @@ async def handle_url_upload(message: Message, url: str):
                         ext = os.path.splitext(url)[1]
                         media_type = 'photo'
                     else:
-                        await progress_msg.edit_text("❌ Unsupported file type. Please upload a photo or video.")
+                        await progress_msg.edit_text("❌ Неподдерживаемый тип файла. Отправьте фото или видео.")
                         return
 
                 # Сохраняем файл
@@ -591,11 +591,11 @@ async def handle_url_upload(message: Message, url: str):
                                            callback_data=f"subscribe|yearly"),
             ]
         ])
-        await message.answer(f"✅ File downloaded! How many copies do you want?", reply_markup=keyboard)
+        await message.answer(f"✅ Файл скачан! Сколько копий вам нужно?", reply_markup=keyboard)
 
     except Exception as e:
         logging.error(f"Error downloading from URL: {e}")
-        await progress_msg.edit_text(f"❌ Error downloading file: {str(e)}")
+        await progress_msg.edit_text(f"❌ Ошибка при скачивании файла: {str(e)}")
 
 
 # Обработчик для неподдерживаемых сообщений
@@ -604,7 +604,7 @@ async def handle_unsupported(message: Message):
     logging.info(
         f"Received unsupported message from {message.from_user.id}: {message.text or message.caption or 'non-text'}")
     # For any unsupported message type, just inform user
-    await message.answer("❌ Please send only photos or videos. Other types are not supported.")
+    await message.answer("❌ Отправляйте только фото или видео. Другие типы не поддерживаются.")
 
 
 # 2️⃣ Обработка кнопки (с путём к файлу)
@@ -631,7 +631,7 @@ async def process_copies(callback: CallbackQuery):
         return
 
     # Immediately show processing message to user
-    await callback.message.answer(f"⏳ Creating {count} copies...")
+    await callback.message.answer(f"⏳ Создаю {count} копий...")
 
     # Prepare containers for cleanup
     output_files = []
@@ -655,7 +655,7 @@ async def process_copies(callback: CallbackQuery):
             except Exception:
                 remaining = 0
             await callback.message.answer(
-                f"❌ You reached the limit of {FREE_DAILY_LIMIT} copies per day. You have {remaining} remaining. Upgrade to premium for unlimited access: /pay"
+                f"❌ Вы достигли лимита в {FREE_DAILY_LIMIT} копий в день. Осталось {remaining}. Перейдите на премиум для безлимитного доступа: /pay"
             )
             return
 
@@ -723,7 +723,7 @@ async def process_copies(callback: CallbackQuery):
 
             except Exception as e:
                 logging.error(f"Error in copy {i + 1}: {e}")
-                await callback.message.answer(f"❌ Error creating copy {i + 1}: {e}")
+                await callback.message.answer(f"❌ Ошибка при создании копии {i + 1}: {e}")
 
         logging.info(f"Created {len(download_links)} links")
 
@@ -750,11 +750,11 @@ async def process_copies(callback: CallbackQuery):
 
         # Генерируем HTML-страницу с карточками файлов
         html_content = f"""<!DOCTYPE html>
-<html lang='en'>
+    <html lang='ru'>
 <head>
     <meta charset='UTF-8'>
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>Your File Copies</title>
+    <title>Копии файла</title>
     <style>
         body {{ font-family: Arial, sans-serif; background: #f5f6fa; margin: 0; padding: 0; }}
         .container {{ max-width: 900px; margin: 30px auto; }}
@@ -778,9 +778,9 @@ async def process_copies(callback: CallbackQuery):
 </head>
 <body>
     <div class='container'>
-        <h1>Your File Copies</h1>
+        <h1>Ваши копии файла</h1>
         <div class='download-all'>
-            <a href='{zip_url}' class='download-btn'>Download All as ZIP</a>
+            <a href='{zip_url}' class='download-btn'>Скачать всё ZIP-архивом</a>
         </div>
         <div class='grid'>
 """
@@ -804,7 +804,7 @@ async def process_copies(callback: CallbackQuery):
                 </a>
                 <div class='card-content'>
                     <div class='card-title'>{filename}</div>
-                    <div class='card-meta'>PHOTO</div>
+                    <div class='card-meta'>ФОТО</div>
                 </div>
             </div>
 """
@@ -819,12 +819,12 @@ async def process_copies(callback: CallbackQuery):
                 </a>
                 <div class='card-content'>
                     <div class='card-title'>{filename}</div>
-                    <div class='card-meta'>VIDEO</div>
+                    <div class='card-meta'>ВИДЕО</div>
                 </div>
             </div>
 """
             else:
-                thumb = f"<div class='card-thumb'>No preview</div>"
+                thumb = f"<div class='card-thumb'>Нет превью</div>"
                 html_content += f"""
             <div class='card'>
                 <div class='card-index'>{i}</div>
@@ -833,14 +833,14 @@ async def process_copies(callback: CallbackQuery):
                 </a>
                 <div class='card-content'>
                     <div class='card-title'>{filename}</div>
-                    <div class='card-meta'>FILE</div>
+                    <div class='card-meta'>ФАЙЛ</div>
                 </div>
             </div>
 """
 
         html_content += """
         </div>
-        <p style='text-align:center;color:#888;font-size:0.98em;margin-top:30px;'>Links valid for 7 days.</p>
+        <p style='text-align:center;color:#888;font-size:0.98em;margin-top:30px;'>Ссылки действуют 7 дней.</p>
     </div>
 </body>
 </html>"""
@@ -866,19 +866,19 @@ async def process_copies(callback: CallbackQuery):
             is_premium = user_data.get('is_premium', False)
 
             if is_premium:
-                status_msg = "✅ Your copies are ready!\n\n🔗 View and download: {url}\n\n⭐ Premium: Unlimited copies"
+                status_msg = "✅ Ваши копии готовы!\n\n🔗 Посмотреть и скачать: {url}\n\n⭐ Премиум: безлимитные копии"
             else:
                 remaining = max(0, FREE_DAILY_LIMIT - files_used)
-                status_msg = f"✅ Your copies are ready!\n\n🔗 View and download: {{url}}\n\n📊 Files used today: {files_used}/{FREE_DAILY_LIMIT}\n📦 Remaining: {remaining}"
+                status_msg = f"✅ Ваши копии готовы!\n\n🔗 Посмотреть и скачать: {{url}}\n\n📊 Сегодня использовано: {files_used}/{FREE_DAILY_LIMIT}\n📦 Осталось: {remaining}"
 
             await callback.message.answer(status_msg.format(url=page_url))
         except Exception as e:
             logging.error(f"Failed to get user stats: {e}")
-            await callback.message.answer(f"✅ Your copies are ready! View and download them here: {page_url}")
+            await callback.message.answer(f"✅ Ваши копии готовы! Смотрите и скачивайте здесь: {page_url}")
 
     except Exception as e:
         logging.error(f"Error in process_copies: {e}")
-        await callback.answer(f"❌ Error: {e}", show_alert=True)
+        await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
     finally:
         # Удаляем временные файлы и очищаем кэш в любом случае
         try:
