@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Uploader (via Server)</title>
+    <title>Загрузчик файлов</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f5f6fa; margin: 0; padding: 0; }
         .container { max-width: 500px; margin: 60px auto; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 32px; }
@@ -15,10 +15,10 @@
 </head>
 <body>
 <div class="container">
-    <h1>Upload your file</h1>
+    <h1>Загрузите файл</h1>
     <form id="uploadForm" enctype="multipart/form-data">
         <input type="file" name="file" id="fileInput" accept="image/*,video/*" required />
-        <button type="submit" id="uploadBtn">Upload</button>
+        <button type="submit" id="uploadBtn">Загрузить</button>
     </form>
     <div class="status" id="status"></div>
 </div>
@@ -53,7 +53,7 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
     }
 
     btn.disabled = true;
-    status.innerText = 'Uploading...';
+    status.innerText = 'Загрузка...';
 
     const formData = new FormData();
     formData.append('file', file);
@@ -69,10 +69,10 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
         if (resp.ok) {
             status.innerHTML = `✅ Файл загружен!<br>Скопируйте ссылку и отправьте её боту:<br><input type='text' value='${result.url}' readonly style='width:100%;margin-top:8px;' onclick='this.select()'>`;
         } else {
-            status.innerText = `❌ Upload failed: ${result.error}`;
+            status.innerText = `❌ Ошибка загрузки: ${result.error}`;
         }
     } catch (error) {
-        status.innerText = `❌ Upload failed: ${error.message}`;
+        status.innerText = `❌ Ошибка загрузки: ${error.message}`;
     } finally {
         btn.disabled = false;
     }

@@ -13,7 +13,7 @@ logging.info("Stats router created")
 async def cmd_stats(message: Message):
     """Generate metrics report (TXT) and send as a file to the requester."""
     logging.info(f"Stats command triggered by user {message.from_user.id}")
-    await message.answer("Preparing report... This may take a moment.")
+    await message.answer("Готовлю отчёт... Это может занять немного времени.")
     logging.info("Starting report generation")
     # Generate and save report
     path = await metrics.save_report_to_file()
@@ -35,4 +35,4 @@ async def cmd_stats(message: Message):
         logging.info("Report sent successfully")
     except Exception as e:
         logging.error(f"Failed to send report: {e}")
-        await message.answer(f"Report generated but failed to send. Check logs for content.", parse_mode=None)
+        await message.answer("Отчёт создан, но не удалось отправить файл. Проверьте логи.", parse_mode=None)
